@@ -1,0 +1,25 @@
+name: Go Application
+
+on:
+  push:
+    branches:
+      - working_branch
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Setup Go environment
+      uses: actions/setup-go@v2
+      with:
+        go-version: '1.x'
+
+    - name: Install make
+      run: sudo apt-get install -y make
+
+    - name: Build and run using Makefile
+      run: make docker-run
