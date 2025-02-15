@@ -19,7 +19,12 @@ jobs:
         go-version: '1.x'
 
     - name: Install Task
-      run: sudo apt-get install -y task
+      uses: arduino/setup-task@v2
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+# run: 
+# sudo apt-get install -y task
 # sudo sh -c "curl -s https://taskfile.dev/install.sh | sh"
 
     - name: Build and run using Taskfile
