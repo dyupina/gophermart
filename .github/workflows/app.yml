@@ -18,8 +18,9 @@ jobs:
       with:
         go-version: '1.x'
 
-    - name: Install make
-      run: sudo apt-get install -y make
+    - name: Install Task
+      run: sudo apt-get install -y task
+# sudo sh -c "curl -s https://taskfile.dev/install.sh | sh"
 
-    - name: Build and run using Makefile
-      run: make docker-run
+    - name: Build and run using Taskfile
+      run: task docker-run

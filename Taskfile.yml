@@ -1,0 +1,34 @@
+version: '3'
+
+vars:
+  binary_name: gophermart
+  docker_image: debian:bookworm-slim
+  app_path: cmd/gophermart
+
+tasks:
+  all:
+    deps: [clean, run]
+
+  build:
+    cmds:
+      - echo "Building {{.binary_name}}..."
+      - go build -o {{.binary_name}} ./{{.app_path}}
+
+  run:
+    cmds:
+      - echo "Running {{.binary_name}}..."
+      - ./{{.binary_name}}
+    deps: [build]
+
+  clean:
+    cmds:
+      - echo "Cleaning up..."
+      - rm -f {{.binary_name}}
+
+  docker-run:
+    cmds:
+      - echo "Running {{.binary_name}} in Docker..."
+      - sudo docker run --rm -v $(pwd):/app -w /app {{.docker_image}} ./{{.binary_name}}
+    deps: [build]
+
+
