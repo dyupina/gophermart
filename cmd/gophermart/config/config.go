@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"os"
 )
 
@@ -16,15 +17,15 @@ type Config struct {
 
 func NewConfig() *Config {
 	return &Config{
-		Addr:                 "localhost:8080",
+		Addr:                 "localhost:8081",
 		DBConnection:         "",
-		AccrualSystemAddress: "", // TODO
+		AccrualSystemAddress: "localhost:8080",
 		Timeout:              15,
 		NumWorkers:           15,
 	}
 }
 
-func Init(c *Config) {
+func Init(c *Config) error {
 	if val, exist := os.LookupEnv("RUN_ADDRESS"); exist {
 		c.Addr = val
 	}
@@ -40,4 +41,9 @@ func Init(c *Config) {
 	flag.StringVar(&c.AccrualSystemAddress, "r", c.AccrualSystemAddress, "accrual calculation system address")
 
 	flag.Parse()
+
+	if c.DBConnection == "" {
+		return fmt.Errorf("set DATABASE_URI env variable")
+	}
+	return nil
 }

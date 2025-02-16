@@ -13,15 +13,18 @@ import (
 )
 
 func main() {
-	c := config.NewConfig()
-	config.Init(c)
-
-	s := db.NewStorage(c)
-
 	sugarLogger, err := logger.NewLogger()
 	if err != nil {
 		sugarLogger.Fatalf("Failed to initialize logger: %v", err)
 	}
+
+	c := config.NewConfig()
+	err = config.Init(c)
+	if err != nil {
+		sugarLogger.Fatalf("Failed to initialize config")
+	}
+
+	s := db.NewStorage(c)
 
 	userService := user.NewUserService()
 	ctrl := handlers.NewController(c, s, sugarLogger, userService)

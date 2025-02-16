@@ -6,6 +6,7 @@ import (
 	"gophermart/cmd/gophermart/config"
 	"log"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -36,11 +37,18 @@ func UpDBMigrations(db *sql.DB) {
 }
 
 func NewStorage(c *config.Config) StorageService {
-	DBConn, _ := sql.Open("pgx", c.DBConnection)
-
-	if c.DBConnection != "" {
-		UpDBMigrations(DBConn)
+	DBConn, err := sql.Open("pgx", c.DBConnection)
+	if err != nil {
+		log.Printf("Error opening database connection: %v\n", err)
+		return nil
 	}
+
+	if err := DBConn.Ping(); err != nil {
+		log.Printf("Error connecting to database: %v\n", err)
+		return nil
+	}
+
+	UpDBMigrations(DBConn)
 
 	return &StorageDB{
 		DBConn: DBConn,

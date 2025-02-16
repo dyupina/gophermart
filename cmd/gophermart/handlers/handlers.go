@@ -32,23 +32,30 @@ func (con *Controller) Register() http.HandlerFunc {
 
 		var user user.User
 		err := json.NewDecoder(req.Body).Decode(&user)
-		if err != nil || user.Login == "" || user.Password == "" {
-			http.Error(res, "Bad request", http.StatusBadRequest)
+		login := user.Login
+		password := user.Password
+		if err != nil || login == "" || password == "" {
+			con.Debug(res, "Bad request", http.StatusBadRequest)
 			return
 		}
 
-		hashedPassword, err := con.storageService.HashPassword(user.Password)
+		hashedPassword, err := con.storageService.HashPassword(password)
 		if err != nil {
-			http.Error(res, "Internal server error", http.StatusInternalServerError)
+			con.Debug(res, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		ok := con.storageService.SaveLoginPassword(userID, user.Login, hashedPassword)
+		ok := con.storageService.SaveLoginPassword(userID, login, hashedPassword)
 		if !ok {
-			http.Error(res, "Conflict: Login already taken", http.StatusConflict)
+			con.Debug(res, "Conflict: Login already taken", http.StatusConflict)
 			return
 		}
 
 		res.WriteHeader(http.StatusOK)
 	}
+}
+
+func (con *Controller) Debug(res http.ResponseWriter, formatString string, code int) {
+	con.sugar.Debugf(formatString)
+	http.Error(res, formatString, code)
 }
