@@ -21,5 +21,6 @@ func InitMiddleware(r *chi.Mux, conf *config.Config, ctrl *handlers.Controller) 
 
 func Routing(r *chi.Mux, ctrl *handlers.Controller) {
 	r.Post("/api/user/register", ctrl.Register())
+	r.Post("/api/user/login", ctrl.Login())
 
 }

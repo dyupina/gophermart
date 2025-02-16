@@ -51,11 +51,36 @@ func (con *Controller) Register() http.HandlerFunc {
 			return
 		}
 
-		res.WriteHeader(http.StatusOK)
+		con.Debug(res, "Register success", http.StatusOK)
+	}
+}
+
+func (con *Controller) Login() http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		// userID := req.Header.Get("User-ID")
+
+		var user user.User
+		err := json.NewDecoder(req.Body).Decode(&user)
+		if err != nil || user.Login == "" || user.Password == "" {
+			con.Debug(res, "Bad request", http.StatusBadRequest)
+			return
+		}
+
+		storedHashedPassword := con.storageService.GetHashedPasswordByLogin(user.Login)
+		if storedHashedPassword == "" || !con.storageService.CheckPasswordHash(user.Password, storedHashedPassword) {
+			con.Debug(res, "Unauthorized: Invalid login/password", http.StatusUnauthorized)
+			return
+		}
+		con.Debug(res, "Login success", http.StatusOK)
 	}
 }
 
 func (con *Controller) Debug(res http.ResponseWriter, formatString string, code int) {
 	con.sugar.Debugf(formatString)
-	http.Error(res, formatString, code)
+	if code != http.StatusOK {
+		http.Error(res, formatString, code)
+	} else {
+		res.Write([]byte(formatString + "\n"))
+		res.WriteHeader(http.StatusOK)
+	}
 }

@@ -15,6 +15,7 @@ type StorageService interface {
 	HashPassword(password string) (string, error)
 	CheckPasswordHash(password, hash string) bool
 	SaveLoginPassword(uid, login, hashedPassword string) bool
+	GetHashedPasswordByLogin(login string) string
 }
 
 type StorageDB struct {
@@ -68,4 +69,10 @@ func (s *StorageDB) CheckPasswordHash(password, hash string) bool {
 func (s *StorageDB) SaveLoginPassword(uid, login, hashedPassword string) bool {
 	_, err := s.DBConn.Exec("INSERT INTO users (uid, login, password) VALUES ($1, $2, $3)", uid, login, hashedPassword)
 	return err == nil
+}
+
+func (s *StorageDB) GetHashedPasswordByLogin(login string) string {
+	var hashedPassword string
+	_ = s.DBConn.QueryRow("SELECT password FROM users WHERE login=$1", login).Scan(&hashedPassword)
+	return hashedPassword
 }
