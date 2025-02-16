@@ -1,5 +1,8 @@
 version: '3'
 
+includes:
+  taskfile_lint: ./Taskfile_lint.yml
+
 vars:
   binary_name: gophermart
   docker_image: debian:bookworm-slim
@@ -13,6 +16,7 @@ tasks:
     cmds:
       - echo "Building {{.binary_name}}..."
       - go build -o {{.binary_name}} ./{{.app_path}}
+    deps: [lint]
 
   run:
     cmds:
@@ -24,6 +28,11 @@ tasks:
     cmds:
       - echo "Cleaning up..."
       - rm -f {{.binary_name}}
+  
+  lint:
+    cmds:
+      - echo "Linting {{.binary_name}}..."
+      - "task taskfile_lint:lint"
 
   docker-run:
     cmds:

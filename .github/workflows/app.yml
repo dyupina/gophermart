@@ -23,9 +23,9 @@ jobs:
       with:
         version: 3.x
         repo-token: ${{ secrets.GITHUB_TOKEN }}
-# run: 
-# sudo apt-get install -y task
-# sudo sh -c "curl -s https://taskfile.dev/install.sh | sh"
+
+    - name: Run Linter
+      run: task lint
 
     - name: Build and run using Taskfile
       run: task docker-run
