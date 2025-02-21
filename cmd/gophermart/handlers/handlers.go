@@ -2,10 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"gophermart/cmd/gophermart/config"
+	"gophermart/cmd/gophermart/order"
 	"gophermart/cmd/gophermart/storage"
 	"gophermart/cmd/gophermart/user"
+	"io"
 	"net/http"
+	"strings"
 
 	"go.uber.org/zap"
 )
@@ -28,7 +32,7 @@ func NewController(conf *config.Config, storageService storage.StorageService, l
 
 func (con *Controller) Register() http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		userID := req.Header.Get("User-ID")
+		// userID := req.Header.Get("User-ID")
 
 		var user user.User
 		err := json.NewDecoder(req.Body).Decode(&user)
@@ -45,7 +49,7 @@ func (con *Controller) Register() http.HandlerFunc {
 			return
 		}
 
-		ok := con.storageService.SaveLoginPassword(userID, login, hashedPassword)
+		ok := con.storageService.SaveLoginPassword(login, hashedPassword)
 		if !ok {
 			con.Debug(res, "Conflict: Login already taken", http.StatusConflict)
 			return
@@ -57,7 +61,7 @@ func (con *Controller) Register() http.HandlerFunc {
 
 func (con *Controller) Login() http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		// userID := req.Header.Get("User-ID")
+		userID := req.Header.Get("User-ID")
 
 		var user user.User
 		err := json.NewDecoder(req.Body).Decode(&user)
@@ -71,16 +75,55 @@ func (con *Controller) Login() http.HandlerFunc {
 			con.Debug(res, "Unauthorized: Invalid login/password", http.StatusUnauthorized)
 			return
 		}
+
+		// req.Header.Set("User-Login", user.Login)
+		err = con.storageService.SaveUID(userID, user.Login)
+		if err != nil {
+			con.Debug(res, "Bad request", http.StatusBadRequest)
+			return
+		}
 		con.Debug(res, "Login success", http.StatusOK)
 	}
 }
 
-func (con *Controller) Debug(res http.ResponseWriter, formatString string, code int) {
-	con.sugar.Debugf(formatString)
-	if code != http.StatusOK {
-		http.Error(res, formatString, code)
-	} else {
-		res.Write([]byte(formatString + "\n"))
-		res.WriteHeader(http.StatusOK)
+func (con *Controller) OrdersUpload() http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		userID := req.Header.Get("User-ID")
+		userLogin := con.storageService.GetLoginByUID(userID)
+		if userLogin == "" {
+			con.Debug(res, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if !strings.Contains(req.Header.Get("Content-Type"), "text/plain") {
+			con.Debug(res, "Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		body, _ := io.ReadAll(req.Body)
+		defer req.Body.Close()
+		orderNumber := string(body)
+		if !order.IsValidOrderNumber(orderNumber) {
+			con.Debug(res, "Unprocessable Entity", http.StatusUnprocessableEntity)
+			return
+		}
+
+		orderAdded, err := con.storageService.AddOrder(userLogin, orderNumber)
+		if err != nil {
+			if err.Error() == "conflict" {
+				con.Debug(res, "Conflict", http.StatusConflict)
+				return
+			}
+
+			fmt.Printf("err %v\n", err)
+			con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		if orderAdded {
+			res.WriteHeader(http.StatusAccepted) // Новый номер заказа принят в обработку
+		} else {
+			con.Debug(res, "OK", http.StatusOK) // Номер заказа уже был загружен этим пользователем
+		}
 	}
 }
