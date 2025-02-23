@@ -31,7 +31,7 @@ func NewController(conf *config.Config, storageService storage.StorageService, l
 
 func (con *Controller) Register() http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		// userID := req.Header.Get("User-ID")
+		userID := req.Header.Get("User-ID")
 
 		var user user.User
 		err := json.NewDecoder(req.Body).Decode(&user)
@@ -54,6 +54,7 @@ func (con *Controller) Register() http.HandlerFunc {
 			return
 		}
 
+		con.userService.SetUserIDCookie(res, userID)
 		con.Debug(res, "Register success", http.StatusOK)
 	}
 }
@@ -81,6 +82,7 @@ func (con *Controller) Login() http.HandlerFunc {
 			con.Debug(res, "Bad request", http.StatusBadRequest)
 			return
 		}
+		con.userService.SetUserIDCookie(res, userID)
 		con.Debug(res, "Login success", http.StatusOK)
 	}
 }
@@ -118,10 +120,11 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 			return
 		}
 
+		con.userService.SetUserIDCookie(res, userID)
 		if orderAdded {
 			res.WriteHeader(http.StatusAccepted) // Новый номер заказа принят в обработку
 		} else {
-			con.Debug(res, "OK", http.StatusOK) // Номер заказа уже был загружен этим пользователем
+			con.Debug(res, "POST orders success", http.StatusOK) // Номер заказа уже был загружен этим пользователем
 		}
 	}
 }
@@ -142,7 +145,6 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 		}
 
 		if len(orders) == 0 {
-			// res.WriteHeader(http.StatusNoContent)
 			con.Debug(res, "No Content", http.StatusNoContent)
 			return
 		}
