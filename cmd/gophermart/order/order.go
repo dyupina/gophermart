@@ -11,11 +11,16 @@ type Order struct {
 	UploadedAt string `json:"uploaded_at"`
 }
 
-func IsValidOrderNumber(number string) bool {
+func IsValidOrderNumber_old(number string) bool {
 	for _, n := range number {
 		if !unicode.IsDigit(n) {
 			return false
 		}
 	}
+	return true
+}
+
+// TODO
+func IsValidOrderNumber(number int) bool {
 	return true
 }

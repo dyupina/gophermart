@@ -7,10 +7,11 @@ vars:
   binary_name: gophermart
   docker_image: debian:bookworm-slim
   app_path: cmd/gophermart
+  accrual_name: cmd/accrual/accrual_linux_amd64
 
 tasks:
   all:
-    deps: [clean, run]
+    deps: [clean, run-accrual, run]
 
   build:
     cmds:
@@ -23,6 +24,12 @@ tasks:
       - echo "Running {{.binary_name}}..."
       - ./{{.binary_name}}
     deps: [build]
+  
+  # TODO убрать строку с подключением
+  run-accrual:
+    cmds:
+      - echo "Running {{.accrual_name}}..."
+      - ./{{.accrual_name}} -d "postgresql://gophermart_user:gophermart_user@localhost/gophermart_db?sslmode=disable"
 
   clean:
     cmds:
@@ -32,11 +39,13 @@ tasks:
   lint:
     cmds:
       - echo "Linting {{.binary_name}}..."
+      - "task taskfile_lint:install-linter" # TODO remove ?
       - "task taskfile_lint:lint"
 
   docker-run:
     cmds:
       - echo "Running {{.binary_name}} in Docker..."
+      - sudo apt install golangci-lint
       - sudo docker run --rm -v $(pwd):/app -w /app {{.docker_image}} ./{{.binary_name}}
     deps: [build]
 

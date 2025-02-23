@@ -8,6 +8,7 @@ import (
 	"gophermart/cmd/gophermart/user"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -103,7 +104,8 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 
 		body, _ := io.ReadAll(req.Body)
 		defer req.Body.Close()
-		orderNumber := string(body)
+		// orderNumber := string(body)
+		orderNumber, _ := strconv.Atoi(string(body))
 		if !order.IsValidOrderNumber(orderNumber) {
 			con.Debug(res, "Unprocessable Entity", http.StatusUnprocessableEntity)
 			return
@@ -149,8 +151,19 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 			return
 		}
 
+		/////
+		// resp, err := http.Get(fmt.Sprintf("http://%s/api/orders/123", con.conf.AccrualSystemAddress))
+		// if err != nil {
+		// 	fmt.Printf(">>>> %v\n", err)
+		// 	return
+		// }
+		// fmt.Printf(">>>> %s\n", resp.Body)
+		// defer resp.Body.Close()
+		/////
+
 		res.Header().Set("Content-Type", "application/json")
 		res.WriteHeader(http.StatusOK)
 		json.NewEncoder(res).Encode(orders)
+
 	}
 }

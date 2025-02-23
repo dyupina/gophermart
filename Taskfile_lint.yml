@@ -54,6 +54,7 @@ tasks:
             exit 1
             ;;
         esac
+    silent: true
   lint:
       desc: Run linters using golangci-lint
       cmds:

@@ -21,7 +21,7 @@ type StorageService interface {
 	GetHashedPasswordByLogin(login string) string
 	SaveUID(userID, login string) error
 	GetLoginByUID(userID string) string
-	AddOrder(userLogin, orderNumber string) (bool, error)
+	AddOrder(userLogin string, orderNumber int) (bool, error)
 	GetOrders(userLogin string) ([]order.Order, error)
 }
 
@@ -96,7 +96,7 @@ func (s *StorageDB) GetLoginByUID(userID string) string {
 	return login
 }
 
-func (s *StorageDB) AddOrder(userLogin, orderNumber string) (bool, error) {
+func (s *StorageDB) AddOrder(userLogin string, orderNumber int) (bool, error) {
 	row := s.DBConn.QueryRow("SELECT login FROM users_orders WHERE $1 = ANY(orders) AND login != $2", orderNumber, userLogin)
 	if err := row.Scan(new(string)); err != sql.ErrNoRows {
 		if err == nil {
