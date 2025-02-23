@@ -5,7 +5,9 @@ import (
 	"embed"
 	"fmt"
 	"gophermart/cmd/gophermart/config"
+	"gophermart/cmd/gophermart/order"
 	"log"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -20,6 +22,7 @@ type StorageService interface {
 	SaveUID(userID, login string) error
 	GetLoginByUID(userID string) string
 	AddOrder(userLogin, orderNumber string) (bool, error)
+	GetOrders(userLogin string) ([]order.Order, error)
 }
 
 type StorageDB struct {
@@ -93,7 +96,6 @@ func (s *StorageDB) GetLoginByUID(userID string) string {
 	return login
 }
 
-// isNew, isOwnedByUser
 func (s *StorageDB) AddOrder(userLogin, orderNumber string) (bool, error) {
 	row := s.DBConn.QueryRow("SELECT login FROM users_orders WHERE $1 = ANY(orders) AND login != $2", orderNumber, userLogin)
 	if err := row.Scan(new(string)); err != sql.ErrNoRows {
@@ -116,5 +118,44 @@ func (s *StorageDB) AddOrder(userLogin, orderNumber string) (bool, error) {
 		return false, err
 	}
 
+	// Сохранить в таблице orders
+	_, err = s.DBConn.Exec(
+		"INSERT INTO orders (number, status, uploaded_at) VALUES ($1, $2, $3)",
+		orderNumber, "NEW", time.Now())
+	if err != nil {
+		return false, err
+	}
+
 	return true, nil // StatusAccepted новый номер заказа принят в обработку
+}
+
+func (s *StorageDB) GetOrders(userLogin string) ([]order.Order, error) {
+	rows, err := s.DBConn.Query(`
+		SELECT o.number, o.status, o.accrual, o.uploaded_at
+        FROM orders o
+        JOIN users_orders uo ON o.number = ANY(uo.orders)
+        WHERE uo.login = $1
+        ORDER BY o.uploaded_at DESC
+    `, userLogin)
+	// DESC - в порядке убывания
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []order.Order
+	for rows.Next() {
+		var order order.Order
+		var uploadedAt time.Time
+
+		err := rows.Scan(&order.Number, &order.Status, &order.Accrual, &uploadedAt)
+		if err != nil {
+			return nil, err
+		}
+		order.UploadedAt = uploadedAt.Format(time.RFC3339)
+		orders = append(orders, order)
+	}
+
+	return orders, nil
 }

@@ -1,15 +1,14 @@
 package order
 
 import (
-	"time"
 	"unicode"
 )
 
 type Order struct {
-	Number     string    `json:"number"`
-	Status     string    `json:"status"`
-	Accrual    int       `json:"accrual,omitempty"`
-	UploadedAt time.Time `json:"uploaded_at"`
+	Number     string `json:"number"`
+	Status     string `json:"status"`
+	Accrual    int    `json:"accrual,omitempty"`
+	UploadedAt string `json:"uploaded_at"`
 }
 
 func IsValidOrderNumber(number string) bool {

@@ -23,6 +23,6 @@ func Routing(r *chi.Mux, ctrl *handlers.Controller) {
 	r.Post("/api/user/register", ctrl.Register())
 	r.Post("/api/user/login", ctrl.Login())
 	r.Post("/api/user/orders", ctrl.OrdersUpload())
-	// r.Get("/api/user/orders", ctrl.OrdersGet())
+	r.Get("/api/user/orders", ctrl.OrdersGet())
 
 }

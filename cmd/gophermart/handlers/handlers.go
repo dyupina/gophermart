@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"gophermart/cmd/gophermart/config"
 	"gophermart/cmd/gophermart/order"
 	"gophermart/cmd/gophermart/storage"
@@ -115,7 +114,6 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 				return
 			}
 
-			fmt.Printf("err %v\n", err)
 			con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -125,5 +123,32 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 		} else {
 			con.Debug(res, "OK", http.StatusOK) // Номер заказа уже был загружен этим пользователем
 		}
+	}
+}
+
+func (con *Controller) OrdersGet() http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		userID := req.Header.Get("User-ID")
+		userLogin := con.storageService.GetLoginByUID(userID)
+		if userLogin == "" {
+			con.Debug(res, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		orders, err := con.storageService.GetOrders(userLogin)
+		if err != nil {
+			con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		if len(orders) == 0 {
+			// res.WriteHeader(http.StatusNoContent)
+			con.Debug(res, "No Content", http.StatusNoContent)
+			return
+		}
+
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(http.StatusOK)
+		json.NewEncoder(res).Encode(orders)
 	}
 }
