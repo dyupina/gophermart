@@ -45,7 +45,6 @@ tasks:
   docker-run:
     cmds:
       - echo "Running {{.binary_name}} in Docker..."
-      - sudo apt install golangci-lint
       - sudo docker run --rm -v $(pwd):/app -w /app {{.docker_image}} ./{{.binary_name}}
     deps: [build]
 
