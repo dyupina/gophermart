@@ -58,8 +58,8 @@ jobs:
         -e DB_HOST=my-postgres \
         -e DB_PORT=5432 \
         -e DATABASE_URI="$DATABASE_URI" \
-        debian:bookworm-slim \
-        sh -c 'apt-get update && apt-get install -y golang && go build -o gophermart ./cmd/gophermart'
+        golang:1.23 \
+        sh -c 'go build -o gophermart ./cmd/gophermart'
       # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
 
 
