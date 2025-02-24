@@ -52,6 +52,12 @@ tasks:
         export DB_HOST=$DB_HOST
 
         MY_APP=my-app
+        if [ "$GITHUB_ACTIONS" = "true" ]; then
+          EXIT_IN_CI="-d"
+        else
+          EXIT_IN_CI=""
+        fi
+        
 
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
@@ -91,8 +97,7 @@ tasks:
         -e POSTGRES_DB="$POSTGRES_DB" \
         postgres
 
-        sudo docker run \
-        --name my-app \
+        sudo docker run $EXIT_IN_CI --name "$MY_APP" \
         --network my-network -p 8081:8081 \
         -v $(pwd):/app -w /app \
         -e DATABASE_URI="$DATABASE_URI" \
