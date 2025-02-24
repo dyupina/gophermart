@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"gophermart/cmd/gophermart/config"
 	"gophermart/cmd/gophermart/order"
 	"gophermart/cmd/gophermart/storage"
@@ -32,6 +33,7 @@ func NewController(conf *config.Config, storageService storage.StorageService, l
 
 func (con *Controller) Register() http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
+		fmt.Printf(">>>>>>>>>>>>>>>>>>>>>>>>>>> REGISTERRRRRR\n")
 		userID := req.Header.Get("User-ID")
 
 		var user user.User

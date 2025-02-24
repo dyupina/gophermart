@@ -34,6 +34,7 @@ func main() {
 	routing.InitMiddleware(r, c, ctrl)
 	routing.Routing(r, ctrl)
 
+	sugarLogger.Debugf("HERE")
 	err = http.ListenAndServe(c.Addr, r) //nolint:gosec // Use chi Timeout (see above)
 	if err != nil {
 		sugarLogger.Fatalf("Failed to start server: %v", err)

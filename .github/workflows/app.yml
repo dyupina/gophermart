@@ -33,33 +33,39 @@ jobs:
         DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
       run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-    - name: Build and run #using Taskfile
-      # run: task docker-run
-
+    - name: Build and run using Taskfile
       env:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
         POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-        DATABASE_URI: postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost/$POSTGRES_DB?sslmode=disable
+      run: task docker-run
 
-      run: |
-        docker network create my-network
-        docker run -d --name my-postgres \
-        --network my-network \
-        -e POSTGRES_USER="$POSTGRES_USER" \
-        -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-        -e POSTGRES_DB="$POSTGRES_DB" \
-        postgres
+      # env:
+      #   POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      #   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      #   POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      #   DB_HOST: my-postgres
+      #   DATABASE_URI: postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$DB_HOST/$POSTGRES_DB?sslmode=disable
 
-        sudo docker run --rm \
-        --name my-app \
-        --network my-network -p 8081:8081 \
-        -v $(pwd):/app -w /app \
-        -e DB_HOST=my-postgres \
-        -e DB_PORT=5432 \
-        -e DATABASE_URI="$DATABASE_URI" \
-        golang:1.23.6 \
-        sh -c 'go build -buildvcs=false -o gophermart ./cmd/gophermart'
+      # run: |
+      #   docker network create my-network
+      #   docker run -d --name "$DB_HOST" \
+      #   --network my-network \
+      #   -e POSTGRES_USER="$POSTGRES_USER" \
+      #   -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+      #   -e POSTGRES_DB="$POSTGRES_DB" \
+      #   postgres
+
+      #   docker run -it \
+      #   --name my-app \
+      #   --network my-network -p 8081:8081 \
+      #   -v $(pwd):/app -w /app \
+      #   -e DB_PORT=5432 \
+      #   -e DATABASE_URI="$DATABASE_URI" \
+      #   golang:1.23.6 \
+      #   sh -c 'cd ./cmd/gophermart && go build -buildvcs=false -o gophermart && ./gophermart'
+
+
       # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
 
 

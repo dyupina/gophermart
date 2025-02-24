@@ -3,12 +3,12 @@ version: '3'
 includes:
   taskfile_lint: ./Taskfile_lint.yml
 
-# TODO убрать строку с подключением
 vars:
   binary_name: gophermart
   app_path: cmd/gophermart
   accrual_name: cmd/accrual/accrual_linux_amd64
-  db_uri: postgresql://gophermart_user:gophermart_user@localhost/gophermart_db?sslmode=disable
+
+dotenv: ['.env']
 
 tasks:
   all:
@@ -17,6 +17,7 @@ tasks:
   build:
     cmds:
       - echo "Building {{.binary_name}}..."
+      - source load_env_variables.sh
       - go build -o {{.binary_name}} ./{{.app_path}}
     deps: [lint]
 
@@ -29,7 +30,7 @@ tasks:
   run-accrual:
     cmds:
       - echo "Running {{.accrual_name}}..."
-      - ./{{.accrual_name}} -d "{{.db_uri}}"
+      - ./{{.accrual_name}} -d "$DATABASE_URI"
 
   clean:
     cmds:
@@ -41,32 +42,40 @@ tasks:
       - echo "Linting {{.binary_name}}..."
       - "task taskfile_lint:install-linter" # TODO remove ?
       - "task taskfile_lint:lint"
+  
+  docker-run:
+    cmds:
+      - |
+        export POSTGRES_USER=$POSTGRES_USER
+        export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        export POSTGRES_DB=$POSTGRES_DB
 
+        DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
+        export DATABASE_URI=$DATABASE_URI
 
-  # docker-run: # CI
-  #   cmds:
-  #     - echo "Running {{.binary_name}} in Docker..."
-  #     - docker network create my-network
-  #     - |
-  #       docker run --name my-postgres 
-  #       --network my-network
-  #       -e POSTGRES_USER=gophermart_user
-  #       -e POSTGRES_PASSWORD=gophermart_user
-  #       -e POSTGRES_DB=gophermart_db
-  #       postgres
-  #     - |
-  #       sudo docker run --rm 
-  #       --name my-app 
-  #       --network my-network -p 8081:8081 
-  #       -v $(pwd):/app -w /app
-  #       -e DB_HOST=my-postgres
-  #       -e DB_PORT=5432
-  #       -e DATABASE_URI={{.db_uri}}
-  #       {{.docker_image}}
-  #       ./{{.binary_name}}
-  #     # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
+        sudo docker stop my-postgres
+        sudo docker stop my-app
 
+        sudo docker network rm -f my-network
 
-  #   deps: [build]
+        sudo docker rm -f my-postgres
+        sudo docker rm -f my-app
 
+        sudo docker network create my-network
 
+        sudo docker run -d --name "$DB_HOST" \
+        --network my-network -p 5433:5432 \
+        -e POSTGRES_USER="$POSTGRES_USER" \
+        -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+        -e POSTGRES_DB="$POSTGRES_DB" \
+        postgres
+
+        sudo docker run -it \
+        --name my-app \
+        --network my-network -p 8081:8081 \
+        -v $(pwd):/app -w /app \
+        -e DATABASE_URI="$DATABASE_URI" \
+        golang:1.23.6 \
+        sh -c 'cd ./cmd/gophermart && go build -buildvcs=false -o gophermart && ./gophermart'
+    
+  

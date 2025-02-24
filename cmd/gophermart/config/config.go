@@ -17,9 +17,9 @@ type Config struct {
 
 func NewConfig() *Config {
 	return &Config{
-		Addr:                 "localhost:8081",
+		Addr:                 ":8081", // Don't edit
 		DBConnection:         "",
-		AccrualSystemAddress: "localhost:8080",
+		AccrualSystemAddress: ":8080",
 		Timeout:              15,
 		NumWorkers:           15,
 	}
@@ -41,6 +41,10 @@ func Init(c *Config) error {
 	flag.StringVar(&c.AccrualSystemAddress, "r", c.AccrualSystemAddress, "accrual calculation system address")
 
 	flag.Parse()
+
+	fmt.Printf(">>>c.Addr %s\n", c.Addr)
+	fmt.Printf(">>>c.DBConnection %s\n", c.DBConnection)
+	fmt.Printf(">>>c.AccrualSystemAddress %s\n", c.AccrualSystemAddress)
 
 	if c.DBConnection == "" {
 		return fmt.Errorf("set DATABASE_URI env variable")

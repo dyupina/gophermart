@@ -52,7 +52,8 @@ func NewStorage(c *config.Config) StorageService {
 	}
 
 	if err := DBConn.Ping(); err != nil {
-		log.Printf("Error connecting to database: %v\n", err)
+		log.Printf(">>>>>>>>>>>>>c.DBConnection: %s\n", c.DBConnection)
+		log.Printf(">>>>>>>>>>>>>Error connecting to database: %v\n", err)
 		return nil
 	}
 
