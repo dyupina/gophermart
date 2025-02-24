@@ -59,9 +59,9 @@ jobs:
         -v $(pwd):/app -w /app \
         -e DB_HOST=my-postgres \
         -e DB_PORT=5432 \
-        -e DATABASE_URI={{.db_uri}} \
+        -e DATABASE_URI="$DATABASE_URI" \
         debian:bookworm-slim \
-        ./${GITHUB_REPOSITORY##*/}
+        sh -c 'go build -o gophermart ./cmd/gophermart'
       # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
 
 
