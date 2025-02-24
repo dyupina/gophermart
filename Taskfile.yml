@@ -49,11 +49,20 @@ tasks:
         export POSTGRES_USER=$POSTGRES_USER
         export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
         export POSTGRES_DB=$POSTGRES_DB
+        DB_HOST=my-postgres
+        MY_APP=my-app
 
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
 
-        containers=("my-postgres" "my-app")
+
+        echo $POSTGRES_USER
+        echo $POSTGRES_PASSWORD
+        echo $POSTGRES_DB
+        echo $DB_HOST
+        echo $DATABASE_URI
+
+        containers=($DB_HOST $MY_APP)
 
         for container_name in "${containers[@]}"; do
           if sudo docker ps -a --format '{{.Names}}' | grep -Eq "^${container_name}$"; then
@@ -66,8 +75,8 @@ tasks:
 
         sudo docker network rm -f my-network
 
-        sudo docker rm -f my-postgres
-        sudo docker rm -f my-app
+        sudo docker rm -f $DB_HOST
+        sudo docker rm -f $MY_APP
 
         sudo docker network create my-network
 
