@@ -49,23 +49,27 @@ tasks:
         export POSTGRES_USER=$POSTGRES_USER
         export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
         export POSTGRES_DB=$POSTGRES_DB
-        DB_HOST=my-postgres
+        export DB_HOST=$DB_HOST
+
         MY_APP=my-app
 
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
 
 
-        echo $POSTGRES_USER
-        echo $POSTGRES_PASSWORD
-        echo $POSTGRES_DB
-        echo $DB_HOST
-        echo $DATABASE_URI
+        echo "$POSTGRES_USER"
+        echo "$POSTGRES_PASSWORD"
+        echo "$POSTGRES_DB"
+        echo "$DATABASE_URI"
 
-        containers=($DB_HOST $MY_APP)
+        echo "DB_HOST: '$DB_HOST'"
+        echo "MY_APP: '$MY_APP'"
+
+
+        containers=("$DB_HOST" "$MY_APP")
 
         for container_name in "${containers[@]}"; do
-          if sudo docker ps -a --format '{{.Names}}' | grep -Eq "^${container_name}$"; then
+          if sudo docker ps -a --format '{{.Names}}' | grep "${container_name}"; then
             echo "Container exists. Stopping container ${container_name}..."
             sudo docker stop "${container_name}"
           else
@@ -87,7 +91,7 @@ tasks:
         -e POSTGRES_DB="$POSTGRES_DB" \
         postgres
 
-        sudo docker run -it \
+        sudo docker run \
         --name my-app \
         --network my-network -p 8081:8081 \
         -v $(pwd):/app -w /app \
