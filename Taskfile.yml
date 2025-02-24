@@ -42,7 +42,7 @@ tasks:
       - "task taskfile_lint:install-linter" # TODO remove ?
       - "task taskfile_lint:lint"
 
-  docker-run:
+  docker-run: # CI
     cmds:
       - echo "Running {{.binary_name}} in Docker..."
       - sudo docker run --rm -v $(pwd):/app -w /app {{.docker_image}} ./{{.binary_name}}

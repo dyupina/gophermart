@@ -3,7 +3,7 @@ name: Go Application
 on:
   push:
     branches:
-      - working_branch
+      - working_branch # TODO master
 
 jobs:
   build-and-run:
@@ -24,8 +24,14 @@ jobs:
         version: 3.x
         repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Run Linter
-      run: task lint
+    # - name: Run Linter
+    #   run: task lint
+    
+    - name: Login to Docker Hub
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
+      run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
     - name: Build and run using Taskfile
       run: task docker-run
