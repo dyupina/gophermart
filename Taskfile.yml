@@ -3,11 +3,13 @@ version: '3'
 includes:
   taskfile_lint: ./Taskfile_lint.yml
 
+# TODO убрать строку с подключением
 vars:
   binary_name: gophermart
   docker_image: debian:bookworm-slim
   app_path: cmd/gophermart
   accrual_name: cmd/accrual/accrual_linux_amd64
+  db_uri: postgresql://gophermart_user:gophermart_user@localhost/gophermart_db?sslmode=disable
 
 tasks:
   all:
@@ -25,11 +27,10 @@ tasks:
       - ./{{.binary_name}}
     deps: [build]
   
-  # TODO убрать строку с подключением
   run-accrual:
     cmds:
       - echo "Running {{.accrual_name}}..."
-      - ./{{.accrual_name}} -d "postgresql://gophermart_user:gophermart_user@localhost/gophermart_db?sslmode=disable"
+      - ./{{.accrual_name}} -d "{{.db_uri}}"
 
   clean:
     cmds:
@@ -45,7 +46,7 @@ tasks:
   docker-run: # CI
     cmds:
       - echo "Running {{.binary_name}} in Docker..."
-      - sudo docker run --rm -v $(pwd):/app -w /app {{.docker_image}} ./{{.binary_name}}
+      - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
     deps: [build]
 
 
