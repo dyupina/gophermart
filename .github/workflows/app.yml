@@ -59,7 +59,7 @@ jobs:
         -e DB_PORT=5432 \
         -e DATABASE_URI="$DATABASE_URI" \
         debian:bookworm-slim \
-        sh -c 'go build -o gophermart ./cmd/gophermart'
+        sh -c 'apt-get update && apt-get install -y golang && go build -o gophermart ./cmd/gophermart'
       # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
 
 
