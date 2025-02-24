@@ -6,7 +6,6 @@ includes:
 # TODO убрать строку с подключением
 vars:
   binary_name: gophermart
-  docker_image: debian:bookworm-slim
   app_path: cmd/gophermart
   accrual_name: cmd/accrual/accrual_linux_amd64
   db_uri: postgresql://gophermart_user:gophermart_user@localhost/gophermart_db?sslmode=disable
@@ -43,10 +42,31 @@ tasks:
       - "task taskfile_lint:install-linter" # TODO remove ?
       - "task taskfile_lint:lint"
 
-  docker-run: # CI
-    cmds:
-      - echo "Running {{.binary_name}} in Docker..."
-      - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
-    deps: [build]
+
+  # docker-run: # CI
+  #   cmds:
+  #     - echo "Running {{.binary_name}} in Docker..."
+  #     - docker network create my-network
+  #     - |
+  #       docker run --name my-postgres 
+  #       --network my-network
+  #       -e POSTGRES_USER=gophermart_user
+  #       -e POSTGRES_PASSWORD=gophermart_user
+  #       -e POSTGRES_DB=gophermart_db
+  #       postgres
+  #     - |
+  #       sudo docker run --rm 
+  #       --name my-app 
+  #       --network my-network -p 8081:8081 
+  #       -v $(pwd):/app -w /app
+  #       -e DB_HOST=my-postgres
+  #       -e DB_PORT=5432
+  #       -e DATABASE_URI={{.db_uri}}
+  #       {{.docker_image}}
+  #       ./{{.binary_name}}
+  #     # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
+
+
+  #   deps: [build]
 
 
