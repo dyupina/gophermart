@@ -33,7 +33,7 @@ jobs:
         DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
       run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-    - name: Build and run using Taskfile
+    - name: Build and run in Docker using Taskfile
       env:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
         POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}

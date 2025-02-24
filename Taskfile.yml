@@ -53,8 +53,16 @@ tasks:
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
 
-        sudo docker stop my-postgres
-        sudo docker stop my-app
+        containers=("my-postgres" "my-app")
+
+        for container_name in "${containers[@]}"; do
+          if sudo docker ps -a --format '{{.Names}}' | grep -Eq "^${container_name}$"; then
+            echo "Container exists. Stopping container ${container_name}..."
+            sudo docker stop "${container_name}"
+          else
+            echo "Container ${container_name} does not exist."
+          fi
+        done
 
         sudo docker network rm -f my-network
 
