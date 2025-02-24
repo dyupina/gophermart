@@ -43,8 +43,6 @@ jobs:
         DATABASE_URI: postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost/$POSTGRES_DB?sslmode=disable
 
       run: |
-        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
         docker network create my-network
         docker run --name my-postgres \
         --network my-network \
