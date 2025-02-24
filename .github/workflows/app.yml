@@ -16,7 +16,7 @@ jobs:
     - name: Setup Go environment
       uses: actions/setup-go@v2
       with:
-        go-version: '1.23'
+        go-version: '1.23.6'
 
     - name: Install Task
       uses: arduino/setup-task@v2
@@ -58,7 +58,7 @@ jobs:
         -e DB_HOST=my-postgres \
         -e DB_PORT=5432 \
         -e DATABASE_URI="$DATABASE_URI" \
-        golang:1.23 \
+        golang:1.23.6 \
         sh -c 'go build -buildvcs=false -o gophermart ./cmd/gophermart'
       # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
 
