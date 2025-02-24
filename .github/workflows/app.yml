@@ -44,7 +44,7 @@ jobs:
 
       run: |
         docker network create my-network
-        docker run --name my-postgres \
+        docker run -d --name my-postgres \
         --network my-network \
         -e POSTGRES_USER="$POSTGRES_USER" \
         -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
