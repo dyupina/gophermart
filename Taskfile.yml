@@ -56,7 +56,7 @@ tasks:
       - "task taskfile_lint:install-linter" # TODO remove ?
       - "task taskfile_lint:lint"
   
-  docker-run:
+  docker-run: # запускаем параллельно ./{{.accrual_name}} и ./gophermart
     cmds:
       - |
         export POSTGRES_USER=$POSTGRES_USER
@@ -118,6 +118,4 @@ tasks:
         -e DATABASE_URI="$DATABASE_URI" \
         -e ACCRUAL_SYSTEM_ADDRESS="$ACCRUAL_SYSTEM_ADDRESS" \
         golang:1.22 \
-        sh -c 'cd ./cmd/gophermart && go build -buildvcs=false -o gophermart && ./gophermart'
-    
-  
+        sh -c './{{.accrual_name}} -a $ACCRUAL_SYSTEM_ADDRESS -d "$DATABASE_URI"  & cd ./cmd/gophermart && go build -buildvcs=false -o gophermart && ./gophermart'
