@@ -24,5 +24,7 @@ func Routing(r *chi.Mux, ctrl *handlers.Controller) {
 	r.Post("/api/user/login", ctrl.Login())
 	r.Post("/api/user/orders", ctrl.OrdersUpload())
 	r.Get("/api/user/orders", ctrl.OrdersGet())
-
+	r.Get("/api/user/balance", ctrl.UserBalance())
+	r.Post("/api/user/balance/withdraw", ctrl.RequestForWithdrawal())
+	r.Get("/api/user/withdrawals", ctrl.InfoAboutWithdrawals())
 }

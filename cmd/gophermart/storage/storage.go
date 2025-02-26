@@ -5,7 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"gophermart/cmd/gophermart/config"
-	"gophermart/cmd/gophermart/order"
+	"gophermart/cmd/gophermart/models"
 	"log"
 	"time"
 
@@ -22,7 +22,12 @@ type StorageService interface {
 	SaveUID(userID, login string) error
 	GetLoginByUID(userID string) string
 	AddOrder(userLogin string, orderNumber int) (bool, error)
-	GetOrders(userLogin string) ([]order.Order, error)
+	GetOrders(userLogin string) ([]models.Order, error)
+	UpdateOrder(orderNumber int, status string, accrual float64) error
+	GetUserBalance(userLogin string) (models.UserBalance, error)
+	UpdateUserBalance(userLogin string, orderNumber int, accrualToAdd float64) error
+	WithdrawFromUserBalance(userLogin string, orderNumber int, amount float64) error
+	GetUserWithdrawals(userLogin string) ([]models.Withdrawal, error)
 }
 
 type StorageDB struct {
@@ -52,8 +57,7 @@ func NewStorage(c *config.Config) StorageService {
 	}
 
 	if err := DBConn.Ping(); err != nil {
-		log.Printf(">>>>>>>>>>>>>c.DBConnection: %s\n", c.DBConnection)
-		log.Printf(">>>>>>>>>>>>>Error connecting to database: %v\n", err)
+		log.Printf("Error connecting to database: %v\n", err)
 		return nil
 	}
 
@@ -77,7 +81,10 @@ func (s *StorageDB) CheckPasswordHash(password, hash string) bool {
 func (s *StorageDB) SaveLoginPassword(login, hashedPassword string) bool {
 	_, err1 := s.DBConn.Exec("INSERT INTO users (login, password) VALUES ($1, $2)", login, hashedPassword)
 	_, err2 := s.DBConn.Exec("INSERT INTO users_orders (login, orders) VALUES ($1, '{}')", login)
-	return err1 == nil && err2 == nil
+	_, err3 := s.DBConn.Exec("INSERT INTO users_balances (login) VALUES ($1)", login)
+	// _, err4 := s.DBConn.Exec("INSERT INTO users_withdrawals (login) VALUES ($1)", login)
+
+	return err1 == nil && err2 == nil && err3 == nil
 }
 
 func (s *StorageDB) GetHashedPasswordByLogin(login string) string {
@@ -106,6 +113,7 @@ func (s *StorageDB) AddOrder(userLogin string, orderNumber int) (bool, error) {
 		return false, err
 	}
 
+	// существует ли запись с orderNumber в users_orders
 	row = s.DBConn.QueryRow("SELECT 1 FROM users_orders WHERE login = $1 AND $2 = ANY(orders)", userLogin, orderNumber)
 	if err := row.Scan(new(int)); err != sql.ErrNoRows {
 		if err == nil {
@@ -119,6 +127,14 @@ func (s *StorageDB) AddOrder(userLogin string, orderNumber int) (bool, error) {
 		return false, err
 	}
 
+	// // TODO проверить
+	// // _, err = s.DBConn.Exec("UPDATE users_withdrawals SET order_number = $2 WHERE login = $1", userLogin, orderNumber)
+	// _, err = s.DBConn.Exec(`
+	// INSERT INTO users_withdrawals (login, order_number) VALUES ($1, $2)`, userLogin, orderNumber)
+	// if err != nil {
+	// 	return false, err
+	// }
+
 	// Сохранить в таблице orders
 	_, err = s.DBConn.Exec(
 		"INSERT INTO orders (number, status, uploaded_at) VALUES ($1, $2, $3)",
@@ -130,7 +146,7 @@ func (s *StorageDB) AddOrder(userLogin string, orderNumber int) (bool, error) {
 	return true, nil // StatusAccepted новый номер заказа принят в обработку
 }
 
-func (s *StorageDB) GetOrders(userLogin string) ([]order.Order, error) {
+func (s *StorageDB) GetOrders(userLogin string) ([]models.Order, error) {
 	rows, err := s.DBConn.Query(`
 		SELECT o.number, o.status, o.accrual, o.uploaded_at
         FROM orders o
@@ -145,9 +161,9 @@ func (s *StorageDB) GetOrders(userLogin string) ([]order.Order, error) {
 	}
 	defer rows.Close()
 
-	var orders []order.Order
+	var orders []models.Order
 	for rows.Next() {
-		var order order.Order
+		var order models.Order
 		var uploadedAt time.Time
 
 		err := rows.Scan(&order.Number, &order.Status, &order.Accrual, &uploadedAt)
@@ -159,4 +175,116 @@ func (s *StorageDB) GetOrders(userLogin string) ([]order.Order, error) {
 	}
 
 	return orders, nil
+}
+
+func (s *StorageDB) UpdateOrder(orderNumber int, status string, accrual float64) error {
+	tx, err := s.DBConn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("UPDATE orders SET status = $1, accrual = $2, accrual_added = (TRUE) WHERE number = $3", status, accrual, orderNumber)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *StorageDB) GetUserBalance(userLogin string) (models.UserBalance, error) {
+	var balance models.UserBalance
+	err := s.DBConn.QueryRow(`SELECT current, withdrawn 
+	FROM users_balances WHERE login = $1`, userLogin).Scan(&balance.Current, &balance.Withdrawn)
+
+	return balance, err
+}
+
+func (s *StorageDB) UpdateUserBalance(userLogin string, orderNumber int, accrualToAdd float64) error {
+	tx, err := s.DBConn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Обновляем баланс для заказа пользователя, только если у заказа accrual_added == FALSE
+	_, err = tx.Exec(`UPDATE users_balances
+		SET current = current + $1
+		FROM orders o
+		WHERE users_balances.login = (SELECT login FROM users WHERE users.login = $2)
+		AND o.accrual_added = FALSE`, accrualToAdd, userLogin)
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *StorageDB) WithdrawFromUserBalance(userLogin string, orderNumber int, amount float64) error {
+	var currentBalance float64
+
+	tx, err := s.DBConn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	err = tx.QueryRow("SELECT current FROM users_balances WHERE login = $1", userLogin).Scan(&currentBalance)
+	if err != nil {
+		return err
+	}
+
+	if currentBalance < amount {
+		return fmt.Errorf("insufficient funds")
+	}
+
+	_, err = tx.Exec("UPDATE users_balances SET current = current - $1, withdrawn = withdrawn + $1 WHERE login = $2", amount, userLogin)
+	if err != nil {
+		return err
+	}
+
+	// Добавить запись о списании средств, если для order_number ее еще не было. И если была, то обновить
+	// EXCLUDED - это специальная псевдонимная таблица, которая ссылается на предполагаемое новое значение в случае конфликта
+	_, err = s.DBConn.Exec(`
+		INSERT INTO users_withdrawals (login, order_number, sum, processed_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (order_number) DO UPDATE 
+		SET sum = users_withdrawals.sum + EXCLUDED.sum, 
+			processed_at = EXCLUDED.processed_at`, userLogin, orderNumber, amount, time.Now())
+
+	if err != nil {
+
+		fmt.Printf(">>>>>>>>>>>>>>>> error adding to users_withdrawals")
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *StorageDB) GetUserWithdrawals(userLogin string) ([]models.Withdrawal, error) {
+	rows, err := s.DBConn.Query(`
+        SELECT order_number, sum, processed_at 
+        FROM users_withdrawals 
+        WHERE login = $1 
+        ORDER BY processed_at DESC`, userLogin)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var withdrawals []models.Withdrawal
+	for rows.Next() {
+		var w models.Withdrawal
+		if err := rows.Scan(&w.Order, &w.Sum, &w.ProcessedAt); err != nil {
+			return nil, err
+		}
+		withdrawals = append(withdrawals, w)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return withdrawals, nil
 }

@@ -26,4 +26,5 @@ vendor/
 SPECIFICATION_copy.md
 cookies.txt
 test.sh
+test_luhn.sh
 .env

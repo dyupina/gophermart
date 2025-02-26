@@ -3,6 +3,7 @@ package config
 import (
 	"flag"
 	"fmt"
+	"gophermart/cmd/gophermart/utils"
 	"os"
 )
 
@@ -42,12 +43,16 @@ func Init(c *Config) error {
 
 	flag.Parse()
 
-	fmt.Printf(">>>c.Addr %s\n", c.Addr)
-	fmt.Printf(">>>c.DBConnection %s\n", c.DBConnection)
-	fmt.Printf(">>>c.AccrualSystemAddress %s\n", c.AccrualSystemAddress)
+	fmt.Printf(">>>c.Addr %s\n", c.Addr)                                 // TODO remove
+	fmt.Printf(">>>c.DBConnection %s\n", c.DBConnection)                 // TODO remove
+	fmt.Printf(">>>c.AccrualSystemAddress %s\n", c.AccrualSystemAddress) // TODO remove
 
 	if c.DBConnection == "" {
 		return fmt.Errorf("set DATABASE_URI env variable")
 	}
+
+	// Регистрация информации о вознаграждении за товар (POST /api/goods) @@@
+	utils.RegisterRewards(c.AccrualSystemAddress)
+
 	return nil
 }
