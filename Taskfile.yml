@@ -27,10 +27,11 @@ tasks:
         export POSTGRES_USER=$POSTGRES_USER
         export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
         export POSTGRES_DB=$POSTGRES_DB
+        export ACCRUAL_SYSTEM_ADDRESS=$ACCRUAL_SYSTEM_ADDRESS
         export DB_HOST=localhost
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
-        DATABASE_URI=$DATABASE_URI ./{{.binary_name}}
+        DATABASE_URI=$DATABASE_URI ACCRUAL_SYSTEM_ADDRESS=$ACCRUAL_SYSTEM_ADDRESS ./{{.binary_name}}
     deps: [build]
   
   run-accrual:
@@ -39,7 +40,9 @@ tasks:
         echo "Running {{.accrual_name}}..."
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
-        ./{{.accrual_name}} -d "$DATABASE_URI"  &
+        export ACCRUAL_SYSTEM_ADDRESS=$ACCRUAL_SYSTEM_ADDRESS
+        ACCRUAL_SYSTEM_ADDRESS=$ACCRUAL_SYSTEM_ADDRESS
+        ./{{.accrual_name}} -a $ACCRUAL_SYSTEM_ADDRESS -d "$DATABASE_URI"  &
         wait
 
   clean:
@@ -60,6 +63,7 @@ tasks:
         export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
         export POSTGRES_DB=$POSTGRES_DB
         export DB_HOST=$DB_HOST
+        export ACCRUAL_SYSTEM_ADDRESS=$ACCRUAL_SYSTEM_ADDRESS
 
         MY_APP=my-app
         if [ "$GITHUB_ACTIONS" = "true" ]; then
@@ -77,6 +81,7 @@ tasks:
         echo "$POSTGRES_PASSWORD"
         echo "$POSTGRES_DB"
         echo "$DATABASE_URI"
+        echo "$ACCRUAL_SYSTEM_ADDRESS"
 
         echo "DB_HOST: '$DB_HOST'"
         echo "MY_APP: '$MY_APP'"
@@ -111,6 +116,7 @@ tasks:
         --network my-network -p 8081:8081 \
         -v $(pwd):/app -w /app \
         -e DATABASE_URI="$DATABASE_URI" \
+        -e ACCRUAL_SYSTEM_ADDRESS="$ACCRUAL_SYSTEM_ADDRESS" \
         golang:1.22 \
         sh -c 'cd ./cmd/gophermart && go build -buildvcs=false -o gophermart && ./gophermart'
     

@@ -50,6 +50,9 @@ func Init(c *Config) error {
 	if c.DBConnection == "" {
 		return fmt.Errorf("set DATABASE_URI env variable")
 	}
+	if c.AccrualSystemAddress == "" {
+		return fmt.Errorf("set ACCRUAL_SYSTEM_ADDRESS env variable")
+	}
 
 	// Регистрация информации о вознаграждении за товар (POST /api/goods) @@@
 	utils.RegisterRewards(c.AccrualSystemAddress)
