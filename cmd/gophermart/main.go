@@ -27,7 +27,8 @@ func main() {
 	s := db.NewStorage(c)
 
 	userService := user.NewUserService()
-	ctrl := handlers.NewController(c, s, sugarLogger, userService)
+	wp := handlers.NewWorkerPool(c.NumWorkers, c.MaxRequestsPerMin)
+	ctrl := handlers.NewController(c, s, sugarLogger, userService, wp)
 
 	r := chi.NewRouter()
 

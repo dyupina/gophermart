@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -21,15 +22,19 @@ type Controller struct {
 	storageService storage.StorageService
 	sugar          *zap.SugaredLogger
 	userService    user.UserService
+	workerPool     *WorkerPool
 }
 
-func NewController(conf *config.Config, storageService storage.StorageService, logger *zap.SugaredLogger, us user.UserService) *Controller {
-	return &Controller{
+func NewController(conf *config.Config, storageService storage.StorageService, logger *zap.SugaredLogger, us user.UserService, wp *WorkerPool) *Controller {
+	con := &Controller{
 		conf:           conf,
 		storageService: storageService,
 		sugar:          logger,
 		userService:    us,
+		workerPool:     wp,
 	}
+	go con.workerPool.Start(con)
+	return con
 }
 
 func (con *Controller) Register() http.HandlerFunc {
@@ -127,10 +132,21 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 			return
 		}
 
-		// -----------
-		// 3. Заказ попадает в систему расчёта баллов лояльности (в Accrual) @@@
-		con.RequestToAccrual(res, userLogin, orderNumber)
-		// -----------
+		// // -----------
+		// // 3. Заказ попадает в систему расчёта баллов лояльности (в Accrual) @@@
+		// _, _ = con.RequestToAccrual(userLogin, orderNumber) // TODO надо проверять ?
+		con.workerPool.AddTask(Task{UserLogin: userLogin, OrderNumber: orderNumber})
+		// // -----------
+
+		// Ожидание результата выполнения задачи в Worker Pool
+		select {
+		case result := <-con.workerPool.results:
+			fmt.Printf("Order processed: %v\n", result)
+		case err := <-con.workerPool.errors:
+			fmt.Printf("Error processing order: %v\n", err)
+			con.Debug(res, "Error processing order", http.StatusInternalServerError)
+			return
+		}
 
 		con.userService.SetUserIDCookie(res, userID)
 		if orderAdded {
@@ -142,7 +158,7 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 }
 
 // Запрос в систему расчёта баллов лояльности (в Accrual) @@@ GET /api/orders/{number}
-func (con *Controller) RequestToAccrual(res http.ResponseWriter, userLogin string, orderNumber int) (*models.AccrualResponse, error) {
+func (con *Controller) RequestToAccrual(userLogin string, orderNumber int) (*models.AccrualResponse, error) {
 	fmt.Printf("\n\n@@@@@@ GET /api/orders/{number}\\/\\/\n")
 
 	resp, err := http.Get(fmt.Sprintf("http://%s/api/orders/%d", con.conf.AccrualSystemAddress, orderNumber))
@@ -165,15 +181,22 @@ func (con *Controller) RequestToAccrual(res http.ResponseWriter, userLogin strin
 		// Обновить данные о бонусах в таблице users_balances
 		if err = con.storageService.UpdateUserBalance(userLogin, orderNumber, accrual); err != nil {
 			fmt.Printf(">>> err %s\n", err)
-			con.Debug(res, "Error UpdateUserBalance", http.StatusInternalServerError) // TODO не знаю какой код отправлять
-			return nil, err
+			return nil, fmt.Errorf("error UpdateUserBalance")
 		}
 
 		// Обновить данные о заказе в таблице orders
 		if err = con.storageService.UpdateOrder(orderNumber, status, accrual); err != nil {
-			con.Debug(res, "Error UpdateOrder", http.StatusInternalServerError) // TODO не знаю какой код отправлять
-			return nil, err
+			return nil, fmt.Errorf("error UpdateOrder")
 		}
+
+	} else if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := resp.Header.Get("Retry-After")
+		retryAfterDuration, err := strconv.Atoi(retryAfter)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Retry-After value")
+		}
+		con.sugar.Debugf("Rate limit exceeded, pausing for %d seconds\n", retryAfterDuration)
+		time.Sleep(time.Duration(retryAfterDuration) * time.Second)
 
 	} else {
 		return nil, fmt.Errorf("response from Accrual with StatusCode != StatusOK")
@@ -203,18 +226,57 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 			return
 		}
 
+		tasks := make([]Task, len(orders))
 		// Обновление статусов заказов через систему расчёта начислений (Accrual) @@@
 		for i, order := range orders {
 			orderNumber, _ := strconv.Atoi(order.Number)
-			accrualResponse, errA := con.RequestToAccrual(res, userLogin, orderNumber)
-			if errA != nil {
-				con.Debug(res, "Error communicating with Accrual system", http.StatusInternalServerError)
+			// accrualResponse, errA := con.RequestToAccrual(userLogin, orderNumber)
+
+			tasks[i] = Task{UserLogin: userLogin, OrderNumber: orderNumber}
+			con.workerPool.AddTask(tasks[i])
+			/*
+				// TODO
+				if errA != nil {
+					if errA.Error() == "error UpdateUserBalance" {
+						con.Debug(res, "error UpdateUserBalance", http.StatusInternalServerError) // TODO не знаю какой код отправлять
+					} else if errA.Error() == "Error UpdateOrder" {
+						con.Debug(res, "Error UpdateOrder", http.StatusInternalServerError) // TODO не знаю какой код отправлять
+					}
+					// con.Debug(res, "Error communicating with Accrual system", http.StatusInternalServerError)
+					return
+				} else {
+					orders[i].Status = accrualResponse.Status
+					orders[i].Accrual = accrualResponse.Accrual
+				}*/
+		}
+
+		// errorsCount := 0
+		for range tasks {
+			select {
+			case result := <-con.workerPool.results:
+				for i, order := range orders {
+					if order.Number == result.Order {
+						orders[i].Status = result.Status
+						orders[i].Accrual = result.Accrual
+						break
+					}
+				}
+			case errA := <-con.workerPool.errors:
+				// errorsCount++
+				// fmt.Printf("Error processing order: %v\n", errA)
+				if errA.Error() == "error UpdateUserBalance" {
+					con.Debug(res, "error UpdateUserBalance", http.StatusInternalServerError) // TODO не знаю какой код отправлять
+				} else if errA.Error() == "Error UpdateOrder" {
+					con.Debug(res, "Error UpdateOrder", http.StatusInternalServerError) // TODO не знаю какой код отправлять
+				}
 				return
-			} else {
-				orders[i].Status = accrualResponse.Status
-				orders[i].Accrual = accrualResponse.Accrual
 			}
 		}
+
+		// if errorsCount == len(tasks) {
+		// 	con.Debug(res, "All requests failed", http.StatusInternalServerError)
+		// 	return
+		// }
 
 		res.Header().Set("Content-Type", "application/json")
 		con.userService.SetUserIDCookie(res, userID)

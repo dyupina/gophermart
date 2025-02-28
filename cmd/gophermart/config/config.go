@@ -11,9 +11,9 @@ type Config struct {
 	Addr                 string
 	DBConnection         string
 	AccrualSystemAddress string
-
-	Timeout    int
-	NumWorkers int
+	Timeout              int
+	NumWorkers           int
+	MaxRequestsPerMin    int
 }
 
 func NewConfig() *Config {
@@ -23,6 +23,7 @@ func NewConfig() *Config {
 		AccrualSystemAddress: ":8080",
 		Timeout:              15,
 		NumWorkers:           15,
+		MaxRequestsPerMin:    60,
 	}
 }
 
