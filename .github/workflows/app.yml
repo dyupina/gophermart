@@ -3,7 +3,8 @@ name: Go Application
 on:
   push:
     branches:
-      - working_branch # TODO master
+      - working_branch
+      - master
 
 jobs:
   build-and-run:

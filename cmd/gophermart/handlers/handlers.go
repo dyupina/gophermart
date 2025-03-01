@@ -187,9 +187,9 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 					}
 				case errA := <-con.workerPool.errors:
 					if errA.Error() == "error UpdateUserBalance" {
-						con.Debug(res, "error UpdateUserBalance", http.StatusInternalServerError) // TODO не знаю какой код отправлять
+						con.Debug(res, "error UpdateUserBalance", http.StatusInternalServerError)
 					} else if errA.Error() == "Error UpdateOrder" {
-						con.Debug(res, "Error UpdateOrder", http.StatusInternalServerError) // TODO не знаю какой код отправлять
+						con.Debug(res, "Error UpdateOrder", http.StatusInternalServerError)
 					}
 					return
 				}
@@ -291,7 +291,8 @@ func (con *Controller) InfoAboutWithdrawals() http.HandlerFunc {
 func (con *Controller) RequestToAccrual(userLogin string, orderNumber int) (*models.AccrualResponse, error) {
 	resp, err := con.AccrualService.RequestToAccrualByOrderumber(orderNumber)
 	if err != nil {
-		fmt.Println("Error sending GET request:", err) // TODO ????
+		fmt.Println("Error sending GET request:", err)
+		return nil, err
 	}
 
 	var accrualResponse *models.AccrualResponse
