@@ -1,0 +1,73 @@
+name: Go Application
+
+on:
+  push:
+    branches:
+      - working_branch
+      - master
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Setup Go environment
+      uses: actions/setup-go@v2
+      with:
+        go-version: '1.22'
+
+    - name: Install Task
+      uses: arduino/setup-task@v2
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run Linter
+      run: task lint
+
+    - name: Login to Docker Hub
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
+      run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+    - name: Build and run in Docker using Taskfile
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+        DB_HOST: ${{ secrets.DB_HOST }}
+      run: task docker-run
+
+      # env:
+      #   POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      #   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      #   POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      #   DB_HOST: my-postgres
+      #   DATABASE_URI: postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$DB_HOST/$POSTGRES_DB?sslmode=disable
+
+      # run: |
+      #   docker network create my-network
+      #   docker run -d --name "$DB_HOST" \
+      #   --network my-network \
+      #   -e POSTGRES_USER="$POSTGRES_USER" \
+      #   -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+      #   -e POSTGRES_DB="$POSTGRES_DB" \
+      #   postgres
+
+      #   docker run -it \
+      #   --name my-app \
+      #   --network my-network -p 8081:8081 \
+      #   -v $(pwd):/app -w /app \
+      #   -e DB_PORT=5432 \
+      #   -e DATABASE_URI="$DATABASE_URI" \
+      #   golang:1.22 \
+      #   sh -c 'cd ./cmd/gophermart && go build -buildvcs=false -o gophermart && ./gophermart'
+
+
+      # - sudo docker run --rm -v $(pwd):/app -w /app -e DATABASE_URI={{.db_uri}} {{.docker_image}} ./{{.binary_name}}
+
+

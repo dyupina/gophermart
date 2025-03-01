@@ -1,0 +1,125 @@
+version: '3'
+
+includes:
+  taskfile_lint: ./Taskfile_lint.yml
+
+vars:
+  binary_name: gophermart
+  app_path: cmd/gophermart
+  accrual_name: cmd/accrual/accrual_linux_amd64
+
+dotenv: ['.env']
+
+tasks:
+  all:
+    deps: [clean, run-accrual, run]
+
+  build:
+    cmds:
+      - echo "Building {{.binary_name}}..."
+      - go build -o {{.binary_name}} ./{{.app_path}}
+    deps: [lint]
+
+# TODO мб заменить на set +e  ...  set -e работу с контейнерами в docker-run
+  run:
+    cmds:
+      - |
+        echo "Running {{.binary_name}}..."
+        export POSTGRES_USER=$POSTGRES_USER
+        export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        export POSTGRES_DB=$POSTGRES_DB
+        export DB_HOST=localhost
+        DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
+        export DATABASE_URI=$DATABASE_URI
+        set +e
+        sudo docker stop my-postgres
+        sudo docker stop my-app
+        sudo docker rm -f my-postgres
+        sudo docker rm -f my-app
+        set -e
+        ./{{.binary_name}} -a "$RUN_ADDRESS___" -d "$DATABASE_URI" -r "$ACCRUAL_SYSTEM_ADDRESS"
+    deps: [build]
+  
+  run-accrual:
+    cmds:
+      - |
+        echo "Running {{.accrual_name}}..."
+        DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
+        ./{{.accrual_name}} -a "$ACCRUAL_SYSTEM_ADDRESS" -d "$DATABASE_URI"  &
+        wait
+
+  clean:
+    cmds:
+      - echo "Cleaning up..."
+      - rm -f {{.binary_name}}
+  
+  lint:
+    cmds:
+      - echo "Linting {{.binary_name}}..."
+      - "task taskfile_lint:install-linter" # TODO remove ?
+      - "task taskfile_lint:lint"
+  
+  docker-run: # запускаем параллельно ./{{.accrual_name}} и ./gophermart
+    cmds:
+      - |
+        # export POSTGRES_USER=$POSTGRES_USER
+        # export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+        # export POSTGRES_DB=$POSTGRES_DB
+        # export DB_HOST=$DB_HOST
+        # export ACCRUAL_SYSTEM_ADDRESS=$ACCRUAL_SYSTEM_ADDRESS
+        # export RUN_ADDRESS=$RUN_ADDRESS
+
+        MY_APP=my-app
+        if [ "$GITHUB_ACTIONS" = "true" ]; then
+          EXIT_IN_CI="-d"
+        else
+          EXIT_IN_CI=""
+        fi
+        
+
+        DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
+        export DATABASE_URI=$DATABASE_URI
+
+
+        echo "$POSTGRES_USER"
+        echo "$POSTGRES_PASSWORD"
+        echo "$POSTGRES_DB"
+        echo "$DATABASE_URI"
+        echo "$ACCRUAL_SYSTEM_ADDRESS"
+        echo "$RUN_ADDRESS___"
+
+        containers=("$DB_HOST" "$MY_APP")
+
+        for container_name in "${containers[@]}"; do
+          if sudo docker ps -a --format '{{.Names}}' | grep "${container_name}"; then
+            echo "Container exists. Stopping container ${container_name}..."
+            sudo docker stop "${container_name}"
+          else
+            echo "Container ${container_name} does not exist."
+          fi
+        done
+
+        sudo docker network rm -f my-network
+
+        sudo docker rm -f $DB_HOST
+        sudo docker rm -f $MY_APP
+
+        sudo docker network create my-network
+
+        sudo docker run -d --name "$DB_HOST" \
+        --network my-network -p 5433:5432 \
+        -e POSTGRES_USER="$POSTGRES_USER" \
+        -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+        -e POSTGRES_DB="$POSTGRES_DB" \
+        postgres
+
+        sudo docker run $EXIT_IN_CI --name "$MY_APP" \
+        --network my-network -p 8081:8081 \
+        -v $(pwd):/app -w /app \
+        -e DATABASE_URI="$DATABASE_URI" \
+        -e ACCRUAL_SYSTEM_ADDRESS="$ACCRUAL_SYSTEM_ADDRESS" \
+        -e RUN_ADDRESS___="$RUN_ADDRESS___" \
+        golang:1.22 \
+        sh -c './{{.accrual_name}} -a $ACCRUAL_SYSTEM_ADDRESS -d "$DATABASE_URI"  & \
+        cd ./cmd/gophermart && go build -buildvcs=false -o gophermart && \
+        ./gophermart -a "$RUN_ADDRESS___" -d "$DATABASE_URI" -r "$ACCRUAL_SYSTEM_ADDRESS"'
