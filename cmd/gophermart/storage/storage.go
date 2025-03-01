@@ -82,7 +82,6 @@ func (s *StorageDB) SaveLoginPassword(login, hashedPassword string) bool {
 	_, err1 := s.DBConn.Exec("INSERT INTO users (login, password) VALUES ($1, $2)", login, hashedPassword)
 	_, err2 := s.DBConn.Exec("INSERT INTO users_orders (login, orders) VALUES ($1, '{}')", login)
 	_, err3 := s.DBConn.Exec("INSERT INTO users_balances (login) VALUES ($1)", login)
-	// _, err4 := s.DBConn.Exec("INSERT INTO users_withdrawals (login) VALUES ($1)", login)
 
 	return err1 == nil && err2 == nil && err3 == nil
 }
@@ -126,14 +125,6 @@ func (s *StorageDB) AddOrder(userLogin string, orderNumber int) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
-	// // TODO проверить
-	// // _, err = s.DBConn.Exec("UPDATE users_withdrawals SET order_number = $2 WHERE login = $1", userLogin, orderNumber)
-	// _, err = s.DBConn.Exec(`
-	// INSERT INTO users_withdrawals (login, order_number) VALUES ($1, $2)`, userLogin, orderNumber)
-	// if err != nil {
-	// 	return false, err
-	// }
 
 	// Сохранить в таблице orders
 	_, err = s.DBConn.Exec(
@@ -254,8 +245,6 @@ func (s *StorageDB) WithdrawFromUserBalance(userLogin string, orderNumber int, a
 			processed_at = EXCLUDED.processed_at`, userLogin, orderNumber, amount, time.Now())
 
 	if err != nil {
-
-		fmt.Printf(">>>>>>>>>>>>>>>> error adding to users_withdrawals")
 		return err
 	}
 

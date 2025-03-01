@@ -1,8 +1,8 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS users_orders (
-    id      SERIAL PRIMARY KEY,
-    login   TEXT   NOT NULL,
+    id      SERIAL,
+    login   TEXT PRIMARY KEY,
     orders  BIGINT[] NOT NULL,
     FOREIGN KEY (login) REFERENCES users(login)
 );

@@ -140,7 +140,6 @@ func (con *Controller) AuthenticateMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
-			// con.userService.InitUserURLs(uid)
 			con.sugar.Debugf("(AuthenticateMiddleware) New user ID set in cookie: %s", uid)
 			req.Header.Set("User-ID", uid)
 		} else {

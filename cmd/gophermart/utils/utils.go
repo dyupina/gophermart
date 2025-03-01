@@ -12,19 +12,23 @@ import (
 	"time"
 )
 
-/*
-	{
-		"order": "<number>",
-		"goods": [
-			{
-				"description": "Чайник Bork",
-				"price": 7000
-			},
-			...
-		]
+type AccrualService interface {
+	RequestToAccrualByOrderumber(orderNumber int) (*http.Response, error)
+	MakePurchase(orderNumber int)
+	RegisterRewards()
+}
+
+type AccrualConf struct {
+	AccrualSystemAddress string
+}
+
+func NewAccrualService(addr string) AccrualService {
+	return &AccrualConf{
+		AccrualSystemAddress: addr,
 	}
-*/
-func MakePurchase(orderNumber int, accrualSystemAddress string) {
+}
+
+func (ac *AccrualConf) MakePurchase(orderNumber int) {
 	names := []string{"Чайник", "Микроволновка", "Холодильник", "Стиральная машина", "Утюг", "Духовой шкаф"}
 	brands := []string{"Bork", "Philips", "Samsung", "LG"}
 
@@ -59,8 +63,8 @@ func MakePurchase(orderNumber int, accrualSystemAddress string) {
 	}
 
 	// Отправка заказа в систему начисления баллов @@@
-	fmt.Printf("orderJSON %s\n", bytes.NewBuffer(orderJSON))
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/orders", accrualSystemAddress), "application/json", bytes.NewBuffer(orderJSON))
+	fmt.Printf("(MakePurchase) Order %s\n", bytes.NewBuffer(orderJSON))
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/orders", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(orderJSON))
 	if err != nil {
 		fmt.Println("Error sending POST request:", err)
 		return
@@ -68,21 +72,11 @@ func MakePurchase(orderNumber int, accrualSystemAddress string) {
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	fmt.Printf("POST http://%s/api/orders response status: %s resp.Body %s\n", accrualSystemAddress, resp.Status, bodyBytes)
+	fmt.Printf("POST http://%s/api/orders response status: %s resp.Body %s\n", ac.AccrualSystemAddress, resp.Status, bodyBytes)
 
 }
 
-/*
-POST /api/goods HTTP/1.1
-Content-Type: application/json
-
-	{
-		"match": "Bork",
-		"reward": 10,
-		"reward_type": "%"
-	}
-*/
-func RegisterRewards(accrualSystemAddress string) {
+func (ac *AccrualConf) RegisterRewards() {
 	brands := []string{"Bork", "Philips", "Samsung", "LG"}
 	rewardTypes := []string{"%", "pt"}
 
@@ -105,12 +99,21 @@ func RegisterRewards(accrualSystemAddress string) {
 		return
 	}
 
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/goods", accrualSystemAddress), "application/json", bytes.NewBuffer(rewardJSON))
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/goods", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(rewardJSON))
 	if err != nil {
 		fmt.Println("Error sending POST request:", err)
 		return
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("POST http://%s/api/goods response status: %s\n", accrualSystemAddress, resp.Status)
+	fmt.Printf("POST http://%s/api/goods response status: %s\n", ac.AccrualSystemAddress, resp.Status)
+}
+
+func (ac *AccrualConf) RequestToAccrualByOrderumber(orderNumber int) (*http.Response, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }

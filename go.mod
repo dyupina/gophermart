@@ -5,6 +5,7 @@ go 1.22
 require go.uber.org/zap v1.27.0
 
 require (
+	github.com/golang/mock v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect

@@ -18,9 +18,9 @@ tasks:
     cmds:
       - echo "Building {{.binary_name}}..."
       - go build -o {{.binary_name}} ./{{.app_path}}
-    # deps: [lint]
-    # TODO вернуть deps
+    deps: [lint]
 
+# TODO мб заменить на set +e  ...  set -e работу с контейнерами в docker-run
   run:
     cmds:
       - |
@@ -31,6 +31,12 @@ tasks:
         export DB_HOST=localhost
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
+        set +e
+        sudo docker stop my-postgres
+        sudo docker stop my-app
+        sudo docker rm -f my-postgres
+        sudo docker rm -f my-app
+        set -e
         ./{{.binary_name}} -a "$RUN_ADDRESS___" -d "$DATABASE_URI" -r "$ACCRUAL_SYSTEM_ADDRESS"
     deps: [build]
   

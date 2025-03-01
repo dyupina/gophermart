@@ -58,8 +58,3 @@ func IsValidOrderNumber(number string) bool {
 	}
 	return true
 }
-
-// // TODO
-// func IsValidOrderNumber(number int) bool {
-// 	return true
-// }
