@@ -147,7 +147,7 @@ func (s *StorageDB) GetOrders(userLogin string) ([]models.Order, error) {
     `, userLogin)
 	// DESC - в порядке убывания
 
-	if err != nil {
+	if err != nil && rows.Err() != nil {
 		return nil, err
 	}
 	defer rows.Close()
