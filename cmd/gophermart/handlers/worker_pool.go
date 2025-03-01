@@ -20,10 +20,12 @@ type WorkerPool struct {
 	wg          *sync.WaitGroup
 }
 
-func NewWorkerPool(workerCount int, maxRequestsPerMinute int) *WorkerPool {
+const bufSize = 100
+
+func NewWorkerPool(workerCount, maxRequestsPerMinute int) *WorkerPool {
 	interval := time.Minute / time.Duration(maxRequestsPerMinute)
 	return &WorkerPool{
-		tasks:       make(chan Task, 100),
+		tasks:       make(chan Task, bufSize),
 		results:     make(chan *models.AccrualResponse),
 		errors:      make(chan error),
 		workerCount: workerCount,

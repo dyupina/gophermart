@@ -3,7 +3,6 @@ package handlers
 import (
 	"io"
 	"net/http"
-	"regexp"
 )
 
 type (
@@ -43,22 +42,7 @@ func (con *Controller) Debug(res http.ResponseWriter, formatString string, code 
 	if code != http.StatusOK {
 		http.Error(res, formatString, code)
 	} else {
-		res.Write([]byte(formatString + "\n"))
+		_, _ = res.Write([]byte(formatString + "\n"))
 		res.WriteHeader(http.StatusOK)
-	}
-}
-
-func extractURLfromHTML(res http.ResponseWriter, req *http.Request) string {
-	b, _ := io.ReadAll(req.Body)
-	body := string(b)
-
-	re := regexp.MustCompile(`href=['"]([^'"]+)['"]`)
-	matches := re.FindStringSubmatch(body)
-
-	if len(matches) > 1 {
-		return matches[1]
-	} else {
-		http.Error(res, "Bad Request", http.StatusBadRequest)
-		return ""
 	}
 }

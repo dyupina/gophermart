@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"gophermart/cmd/gophermart/models"
-	"io"
 	"math/rand"
-	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/go-resty/resty/v2"
 )
 
 type AccrualService interface {
-	RequestToAccrualByOrderumber(orderNumber int) (*http.Response, error)
+	RequestToAccrualByOrderumber(orderNumber int) (*resty.Response, error)
 	MakePurchase(orderNumber int)
 	RegisterRewards()
 }
@@ -29,23 +29,25 @@ func NewAccrualService(addr string) AccrualService {
 }
 
 func (ac *AccrualConf) MakePurchase(orderNumber int) {
-	names := []string{"Чайник", "Микроволновка", "Холодильник", "Стиральная машина", "Утюг", "Духовой шкаф"}
-	brands := []string{"Bork", "Philips", "Samsung", "LG"}
+	n := []string{"Чайник", "Микроволновка", "Холодильник", "Стиральная машина", "Утюг", "Духовой шкаф"}
+	b := []string{"Bork", "Philips", "Samsung", "LG"}
 
-	rand.New(rand.NewSource(time.Now().UnixNano()))
+	rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // Not used for cryptographic purposes
 
 	// Случайное количество товаров в заказе
-	numberOfGoods := rand.Intn(5) + 1 // случайное количество от 1 до 5
+	var randInt = 5
+	numberOfGoods := rand.Intn(randInt) + 1 //nolint:gosec // Not used for cryptographic purposes
 
 	var goods []models.AccrualGoods
 
 	for range numberOfGoods {
 		// Генерация случайного набора товаров и цены для каждого товара
-		description := fmt.Sprintf("%s %s", names[rand.Intn(len(names))], brands[rand.Intn(len(brands))])
-		price := rand.Intn(10000) + 1
+		desc := fmt.Sprintf("%s %s", n[rand.Intn(len(n))], b[rand.Intn(len(b))]) //nolint:gosec // Not used for cryptographic purposes
+		var randPrice = 10000
+		price := rand.Intn(randPrice) + 1 //nolint:gosec // Not used for cryptographic purposes
 
 		goods = append(goods, models.AccrualGoods{
-			Description: description,
+			Description: desc,
 			Price:       price,
 		})
 	}
@@ -64,28 +66,34 @@ func (ac *AccrualConf) MakePurchase(orderNumber int) {
 
 	// Отправка заказа в систему начисления баллов @@@
 	fmt.Printf("(MakePurchase) Order %s\n", bytes.NewBuffer(orderJSON))
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/orders", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(orderJSON))
+
+	client := resty.New()
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(bytes.NewBuffer(orderJSON)).
+		Post(fmt.Sprintf("http://%s/api/orders", ac.AccrualSystemAddress))
+
+	// resp, err := http.Post(fmt.Sprintf("http://%s/api/orders", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(orderJSON))
 	if err != nil {
 		fmt.Println("Error sending POST request:", err)
 		return
 	}
-	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	fmt.Printf("POST http://%s/api/orders response status: %s resp.Body %s\n", ac.AccrualSystemAddress, resp.Status, bodyBytes)
-
+	fmt.Printf("POST http://%s/api/orders response status: %s resp.Body %s\n", ac.AccrualSystemAddress, resp.Status(), resp.Body())
 }
 
 func (ac *AccrualConf) RegisterRewards() {
 	brands := []string{"Bork", "Philips", "Samsung", "LG"}
 	rewardTypes := []string{"%", "pt"}
 
-	rand.New(rand.NewSource(time.Now().UnixNano()))
+	rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // Not used for cryptographic purposes
 
 	// Генерация случайных значений для полей запроса
-	match := brands[rand.Intn(len(brands))]
-	reward := rand.Intn(100) + 1 // случайное вознаграждение от 1 до 100
-	rewardType := rewardTypes[rand.Intn(len(rewardTypes))]
+	match := brands[rand.Intn(len(brands))] //nolint:gosec // Not used for cryptographic purposes
+	// случайное вознаграждение от 1 до 100
+	var randReward = 100
+	reward := rand.Intn(randReward) + 1                    //nolint:gosec // Not used for cryptographic purposes
+	rewardType := rewardTypes[rand.Intn(len(rewardTypes))] //nolint:gosec // Not used for cryptographic purposes
 
 	rewardRequest := models.RewardRequest{
 		Match:      match,
@@ -99,18 +107,27 @@ func (ac *AccrualConf) RegisterRewards() {
 		return
 	}
 
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/goods", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(rewardJSON))
+	client := resty.New()
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(bytes.NewBuffer(rewardJSON)).
+		Post(fmt.Sprintf("http://%s/api/goods", ac.AccrualSystemAddress))
+
+	// resp, err := http.Post(fmt.Sprintf("http://%s/api/goods", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(rewardJSON))
 	if err != nil {
 		fmt.Println("Error sending POST request:", err)
 		return
 	}
-	defer resp.Body.Close()
 
-	fmt.Printf("POST http://%s/api/goods response status: %s\n", ac.AccrualSystemAddress, resp.Status)
+	fmt.Printf("POST http://%s/api/goods response status: %s\n", ac.AccrualSystemAddress, resp.Status())
 }
 
-func (ac *AccrualConf) RequestToAccrualByOrderumber(orderNumber int) (*http.Response, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
+func (ac *AccrualConf) RequestToAccrualByOrderumber(orderNumber int) (*resty.Response, error) {
+	// resp, err := http.Get(fmt.Sprintf("http://%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
+	client := resty.New()
+	resp, err := client.R().
+		Get(fmt.Sprintf("http://%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
+
 	if err != nil {
 		return nil, err
 	}

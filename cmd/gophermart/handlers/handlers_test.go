@@ -57,6 +57,7 @@ func Test_Register(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status OK; got %v", resp.StatusCode)
 	}
+	resp.Body.Close()
 }
 
 func Test_Login(t *testing.T) {
@@ -131,6 +132,7 @@ func Test_Login(t *testing.T) {
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %v; got %v", tt.expectedStatus, resp.StatusCode)
 			}
+			resp.Body.Close()
 		})
 	}
 }
@@ -196,6 +198,7 @@ func Test_OrdersUpload(t *testing.T) {
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %v; got %v", tt.expectedStatus, resp.StatusCode)
 			}
+			resp.Body.Close()
 		})
 	}
 }
@@ -264,6 +267,7 @@ func Test_OrdersGet(t *testing.T) {
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %v; got %v", tt.expectedStatus, resp.StatusCode)
 			}
+			defer resp.Body.Close()
 
 			if tt.expectedBody != nil {
 				var body []models.Order
@@ -331,6 +335,7 @@ func Test_UserBalance(t *testing.T) {
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %v; got %v", tt.expectedStatus, resp.StatusCode)
 			}
+			defer resp.Body.Close()
 
 			if tt.expectedBody != nil {
 				var body models.UserBalance
@@ -427,6 +432,7 @@ func Test_RequestForWithdrawal(t *testing.T) {
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %v; got %v", tt.expectedStatus, resp.StatusCode)
 			}
+			resp.Body.Close()
 		})
 	}
 }
@@ -497,6 +503,7 @@ func Test_InfoAboutWithdrawals(t *testing.T) {
 			if resp.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %v; got %v", tt.expectedStatus, resp.StatusCode)
 			}
+			defer resp.Body.Close()
 
 			if tt.expectedBody != nil {
 				var body []models.Withdrawal

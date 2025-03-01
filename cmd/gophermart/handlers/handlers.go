@@ -46,10 +46,10 @@ func (con *Controller) Register() http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		userID := req.Header.Get("User-ID")
 
-		var user user.User
-		err := json.NewDecoder(req.Body).Decode(&user)
-		login := user.Login
-		password := user.Password
+		var user_ user.User
+		err := json.NewDecoder(req.Body).Decode(&user_)
+		login := user_.Login
+		password := user_.Password
 		if err != nil || login == "" || password == "" {
 			con.Debug(res, "Bad request", http.StatusBadRequest)
 			return
@@ -67,7 +67,7 @@ func (con *Controller) Register() http.HandlerFunc {
 			return
 		}
 
-		con.userService.SetUserIDCookie(res, userID)
+		_ = con.userService.SetUserIDCookie(res, userID)
 		con.Debug(res, "Register success", http.StatusOK)
 	}
 }
@@ -76,25 +76,25 @@ func (con *Controller) Login() http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		userID := req.Header.Get("User-ID")
 
-		var user user.User
-		err := json.NewDecoder(req.Body).Decode(&user)
-		if err != nil || user.Login == "" || user.Password == "" {
+		var user_ user.User
+		err := json.NewDecoder(req.Body).Decode(&user_)
+		if err != nil || user_.Login == "" || user_.Password == "" {
 			con.Debug(res, "Bad request", http.StatusBadRequest)
 			return
 		}
 
-		storedHashedPassword := con.storageService.GetHashedPasswordByLogin(user.Login)
-		if storedHashedPassword == "" || !con.storageService.CheckPasswordHash(user.Password, storedHashedPassword) {
+		storedHashedPassword := con.storageService.GetHashedPasswordByLogin(user_.Login)
+		if storedHashedPassword == "" || !con.storageService.CheckPasswordHash(user_.Password, storedHashedPassword) {
 			con.Debug(res, "Unauthorized: Invalid login/password", http.StatusUnauthorized)
 			return
 		}
 
-		err = con.storageService.SaveUID(userID, user.Login)
+		err = con.storageService.SaveUID(userID, user_.Login)
 		if err != nil {
 			con.Debug(res, "Bad request", http.StatusBadRequest)
 			return
 		}
-		con.userService.SetUserIDCookie(res, userID)
+		_ = con.userService.SetUserIDCookie(res, userID)
 		con.Debug(res, "Login success", http.StatusOK)
 	}
 }
@@ -137,7 +137,7 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 		// 3. Заказ попадает в систему расчёта баллов лояльности (в Accrual) @@@
 		con.workerPool.AddTask(Task{UserLogin: userLogin, OrderNumber: orderNumber})
 
-		con.userService.SetUserIDCookie(res, userID)
+		_ = con.userService.SetUserIDCookie(res, userID)
 		if orderAdded {
 			res.WriteHeader(http.StatusAccepted) // Новый номер заказа принят в обработку
 		} else {
@@ -197,9 +197,9 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 		}()
 
 		res.Header().Set("Content-Type", "application/json")
-		con.userService.SetUserIDCookie(res, userID)
+		_ = con.userService.SetUserIDCookie(res, userID)
 		res.WriteHeader(http.StatusOK)
-		json.NewEncoder(res).Encode(orders)
+		_ = json.NewEncoder(res).Encode(orders)
 	}
 }
 
@@ -218,9 +218,9 @@ func (con *Controller) UserBalance() http.HandlerFunc {
 		}
 
 		res.Header().Set("Content-Type", "application/json")
-		con.userService.SetUserIDCookie(res, userID)
+		_ = con.userService.SetUserIDCookie(res, userID)
 		res.WriteHeader(http.StatusOK)
-		json.NewEncoder(res).Encode(balance)
+		_ = json.NewEncoder(res).Encode(balance)
 	}
 }
 
@@ -255,7 +255,7 @@ func (con *Controller) RequestForWithdrawal() http.HandlerFunc {
 			}
 			return
 		}
-		con.userService.SetUserIDCookie(res, userID)
+		_ = con.userService.SetUserIDCookie(res, userID)
 		con.Debug(res, "Request for withdrawal success", http.StatusOK)
 	}
 }
@@ -281,9 +281,9 @@ func (con *Controller) InfoAboutWithdrawals() http.HandlerFunc {
 		}
 
 		res.Header().Set("Content-Type", "application/json")
-		con.userService.SetUserIDCookie(res, userID)
+		_ = con.userService.SetUserIDCookie(res, userID)
 		res.WriteHeader(http.StatusOK)
-		json.NewEncoder(res).Encode(withdrawals)
+		_ = json.NewEncoder(res).Encode(withdrawals)
 	}
 }
 
@@ -293,11 +293,10 @@ func (con *Controller) RequestToAccrual(userLogin string, orderNumber int) (*mod
 	if err != nil {
 		fmt.Println("Error sending GET request:", err) // TODO ????
 	}
-	defer resp.Body.Close()
 
 	var accrualResponse *models.AccrualResponse
-	if resp.StatusCode == http.StatusOK {
-		if err := json.NewDecoder(resp.Body).Decode(&accrualResponse); err != nil {
+	if resp.StatusCode() == http.StatusOK {
+		if err := json.Unmarshal(resp.Body(), &accrualResponse); err != nil {
 			return nil, err
 		}
 		status := accrualResponse.Status
@@ -312,16 +311,14 @@ func (con *Controller) RequestToAccrual(userLogin string, orderNumber int) (*mod
 		if err = con.storageService.UpdateOrder(orderNumber, status, accrual); err != nil {
 			return nil, fmt.Errorf("error UpdateOrder")
 		}
-
-	} else if resp.StatusCode == http.StatusTooManyRequests {
-		retryAfter := resp.Header.Get("Retry-After")
+	} else if resp.StatusCode() == http.StatusTooManyRequests {
+		retryAfter := resp.Header().Get("Retry-After")
 		retryAfterDuration, err := strconv.Atoi(retryAfter)
 		if err != nil {
 			return nil, fmt.Errorf("invalid Retry-After value")
 		}
 		con.sugar.Debugf("Rate limit exceeded, pausing for %d seconds\n", retryAfterDuration)
 		time.Sleep(time.Duration(retryAfterDuration) * time.Second)
-
 	} else {
 		return nil, fmt.Errorf("response from Accrual with StatusCode != StatusOK")
 	}

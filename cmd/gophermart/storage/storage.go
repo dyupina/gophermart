@@ -173,7 +173,11 @@ func (s *StorageDB) UpdateOrder(orderNumber int, status string, accrual float64)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			log.Printf("rollback error: %v", err)
+		}
+	}()
 
 	_, err = tx.Exec("UPDATE orders SET status = $1, accrual = $2, accrual_added = (TRUE) WHERE number = $3", status, accrual, orderNumber)
 	if err != nil {
@@ -196,7 +200,11 @@ func (s *StorageDB) UpdateUserBalance(userLogin string, orderNumber int, accrual
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			log.Printf("rollback error: %v", err)
+		}
+	}()
 
 	// Обновляем баланс для заказа пользователя, только если у заказа accrual_added == FALSE
 	_, err = tx.Exec(`UPDATE users_balances
@@ -219,7 +227,11 @@ func (s *StorageDB) WithdrawFromUserBalance(userLogin string, orderNumber int, a
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			log.Printf("rollback error: %v", err)
+		}
+	}()
 
 	err = tx.QueryRow("SELECT current FROM users_balances WHERE login = $1", userLogin).Scan(&currentBalance)
 	if err != nil {
@@ -271,7 +283,7 @@ func (s *StorageDB) GetUserWithdrawals(userLogin string) ([]models.Withdrawal, e
 		withdrawals = append(withdrawals, w)
 	}
 
-	if err = rows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 

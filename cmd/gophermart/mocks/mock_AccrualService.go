@@ -5,9 +5,9 @@
 package mocks
 
 import (
-	http "net/http"
 	reflect "reflect"
 
+	resty "github.com/go-resty/resty/v2"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -59,10 +59,10 @@ func (mr *MockAccrualServiceMockRecorder) RegisterRewards() *gomock.Call {
 }
 
 // RequestToAccrualByOrderumber mocks base method.
-func (m *MockAccrualService) RequestToAccrualByOrderumber(arg0 int) (*http.Response, error) {
+func (m *MockAccrualService) RequestToAccrualByOrderumber(arg0 int) (*resty.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RequestToAccrualByOrderumber", arg0)
-	ret0, _ := ret[0].(*http.Response)
+	ret0, _ := ret[0].(*resty.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
