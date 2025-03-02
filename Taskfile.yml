@@ -32,10 +32,10 @@ tasks:
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
         set +e
-        sudo docker stop my-postgres
-        sudo docker stop my-app
-        sudo docker rm -f my-postgres
-        sudo docker rm -f my-app
+        docker stop my-postgres  # если остались контейнеры после запуска task docker-run
+        docker stop my-app
+        docker rm -f my-postgres
+        docker rm -f my-app
         set -e
         ./{{.binary_name}} -a "$RUN_ADDRESS___" -d "$DATABASE_URI" -r "$ACCRUAL_SYSTEM_ADDRESS"
     deps: [build]
@@ -62,24 +62,15 @@ tasks:
   docker-run: # запускаем параллельно ./{{.accrual_name}} и ./gophermart
     cmds:
       - |
-        # export POSTGRES_USER=$POSTGRES_USER
-        # export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-        # export POSTGRES_DB=$POSTGRES_DB
-        # export DB_HOST=$DB_HOST
-        # export ACCRUAL_SYSTEM_ADDRESS=$ACCRUAL_SYSTEM_ADDRESS
-        # export RUN_ADDRESS=$RUN_ADDRESS
-
         MY_APP=my-app
         if [ "$GITHUB_ACTIONS" = "true" ]; then
           EXIT_IN_CI="-d"
         else
           EXIT_IN_CI=""
         fi
-        
 
         DATABASE_URI=$(sh -c 'echo "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"')
         export DATABASE_URI=$DATABASE_URI
-
 
         echo "$POSTGRES_USER"
         echo "$POSTGRES_PASSWORD"
@@ -88,32 +79,33 @@ tasks:
         echo "$ACCRUAL_SYSTEM_ADDRESS"
         echo "$RUN_ADDRESS___"
 
-        containers=("$DB_HOST" "$MY_APP")
+        # containers=("$DB_HOST" "$MY_APP")
+        # for container_name in "${containers[@]}"; do
+        #   if sudo docker ps -a --format '{{.Names}}' | grep "${container_name}"; then
+        #     echo "Container exists. Stopping container ${container_name}..."
+        #     sudo docker stop "${container_name}"
+        #   else
+        #     echo "Container ${container_name} does not exist."
+        #   fi
+        # done
 
-        for container_name in "${containers[@]}"; do
-          if sudo docker ps -a --format '{{.Names}}' | grep "${container_name}"; then
-            echo "Container exists. Stopping container ${container_name}..."
-            sudo docker stop "${container_name}"
-          else
-            echo "Container ${container_name} does not exist."
-          fi
-        done
+        set +e
+        docker stop my-postgres
+        docker stop my-app
+        docker rm -f my-postgres
+        docker rm -f my-app
+        docker network rm -f my-network
+        docker network create my-network
+        set -e
 
-        sudo docker network rm -f my-network
-
-        sudo docker rm -f $DB_HOST
-        sudo docker rm -f $MY_APP
-
-        sudo docker network create my-network
-
-        sudo docker run -d --name "$DB_HOST" \
+        docker run -d --name "$DB_HOST" \
         --network my-network -p 5433:5432 \
         -e POSTGRES_USER="$POSTGRES_USER" \
         -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
         -e POSTGRES_DB="$POSTGRES_DB" \
         postgres
 
-        sudo docker run $EXIT_IN_CI --name "$MY_APP" \
+        docker run $EXIT_IN_CI --name "$MY_APP" \
         --network my-network -p 8081:8081 \
         -v $(pwd):/app -w /app \
         -e DATABASE_URI="$DATABASE_URI" \
