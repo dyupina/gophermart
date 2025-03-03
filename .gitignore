@@ -28,3 +28,4 @@ cookies.txt
 test.sh
 test_luhn.sh
 .env
+coverage/

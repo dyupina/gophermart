@@ -1,0 +1,59 @@
+version: '3.8' #
+
+services:
+  db:
+    image: postgres
+    container_name: my-postgres
+    networks:
+      - my-network
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+
+  accrual_app:
+    image: golang:1.22
+    container_name: my-accrual
+    networks:
+      - my-network
+    ports:
+      - "8085:8085"
+    volumes:
+      - ./cmd/accrual:/app
+    working_dir: /app
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+      # DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable
+      ACCRUAL_SYSTEM_ADDRESS: ${ACCRUAL_SYSTEM_ADDRESS}
+    command: sh -c './accrual_linux_amd64 -a $ACCRUAL_SYSTEM_ADDRESS -d "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable"'
+
+  gophermart_app:
+    image: golang:1.22
+    container_name: my-gophermart
+    networks:
+      - my-network
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./:/app
+    working_dir: /app/cmd/gophermart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+      # DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}/${POSTGRES_DB}?sslmode=disable
+      RUN_ADDRESS___: ${RUN_ADDRESS___}
+      ACCRUAL_SYSTEM_ADDRESS: ${ACCRUAL_SYSTEM_ADDRESS}
+    depends_on:
+      - accrual_app
+    command: sh -c 'go build -buildvcs=false -o gophermart && ./gophermart -a "$RUN_ADDRESS___" -d "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$DB_HOST/$POSTGRES_DB?sslmode=disable" -r "$ACCRUAL_SYSTEM_ADDRESS"'
+
+networks:
+  my-network: {}

@@ -43,6 +43,10 @@ func Init(c *Config) error {
 
 	flag.Parse()
 
+	fmt.Printf("c.Addr %s\n", c.Addr)
+	fmt.Printf("c.DBConnection %s\n", c.DBConnection)
+	fmt.Printf("c.AccrualSystemAddress %s\n", c.AccrualSystemAddress)
+
 	if c.DBConnection == "" {
 		return fmt.Errorf("set DATABASE_URI env variable")
 	}

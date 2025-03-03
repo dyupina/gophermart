@@ -19,25 +19,40 @@ jobs:
       with:
         go-version: '1.22'
 
-    - name: Install Task
-      uses: arduino/setup-task@v2
-      with:
-        version: 3.x
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Run Linter
-      run: task lint
+      uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
 
-    - name: Login to Docker Hub
-      env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
-      run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - name: Run Tests with Coverage
+      run: |
+        mkdir -p coverage
+        go test ./... -coverprofile=coverage/coverage.out
+        go tool cover -func=coverage/coverage.out
+        
+    - name: Build and run in Docker using Docker-Compose
+      run: docker-compose up
 
-    - name: Build and run in Docker using Taskfile
-      env:
-        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-        POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-        DB_HOST: ${{ secrets.DB_HOST }}
-      run: task docker-run
+
+    # - name: Install Task
+    #   uses: arduino/setup-task@v2
+    #   with:
+    #     version: 3.x
+    #     repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    # - name: Run Linter
+    #   run: task lint
+
+    # - name: Login to Docker Hub
+    #   env:
+    #     DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+    #     DOCKER_PASSWORD: ${{ secrets.DOCKER_TOKEN }}
+    #   run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+    # - name: Build and run in Docker using Taskfile
+    #   env:
+    #     POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+    #     POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+    #     POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+    #     DB_HOST: ${{ secrets.DB_HOST }}
+    #   run: task docker-run

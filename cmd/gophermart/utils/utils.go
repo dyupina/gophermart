@@ -71,15 +71,14 @@ func (ac *AccrualConf) MakePurchase(orderNumber int) {
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(bytes.NewBuffer(orderJSON)).
-		Post(fmt.Sprintf("http://%s/api/orders", ac.AccrualSystemAddress))
+		Post(fmt.Sprintf("http://accrual_app%s/api/orders", ac.AccrualSystemAddress))
 
-	// resp, err := http.Post(fmt.Sprintf("http://%s/api/orders", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(orderJSON))
 	if err != nil {
 		fmt.Println("Error sending POST request:", err)
 		return
 	}
 
-	fmt.Printf("POST http://%s/api/orders response status: %s resp.Body %s\n", ac.AccrualSystemAddress, resp.Status(), resp.Body())
+	fmt.Printf("POST http://accrual_app%s/api/orders response status: %s resp.Body %s\n", ac.AccrualSystemAddress, resp.Status(), resp.Body())
 }
 
 func (ac *AccrualConf) RegisterRewards() {
@@ -111,22 +110,21 @@ func (ac *AccrualConf) RegisterRewards() {
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(bytes.NewBuffer(rewardJSON)).
-		Post(fmt.Sprintf("http://%s/api/goods", ac.AccrualSystemAddress))
+		Post(fmt.Sprintf("http://accrual_app%s/api/goods", ac.AccrualSystemAddress))
 
-	// resp, err := http.Post(fmt.Sprintf("http://%s/api/goods", ac.AccrualSystemAddress), "application/json", bytes.NewBuffer(rewardJSON))
 	if err != nil {
 		fmt.Println("Error sending POST request:", err)
 		return
 	}
 
-	fmt.Printf("POST http://%s/api/goods response status: %s\n", ac.AccrualSystemAddress, resp.Status())
+	fmt.Printf("POST http://accrual_app%s/api/goods response status: %s\n", ac.AccrualSystemAddress, resp.Status())
 }
 
 func (ac *AccrualConf) RequestToAccrualByOrderumber(orderNumber int) (*resty.Response, error) {
-	// resp, err := http.Get(fmt.Sprintf("http://%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
+	// resp, err := http.Get(fmt.Sprintf("http://accrual_app%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
 	client := resty.New()
 	resp, err := client.R().
-		Get(fmt.Sprintf("http://%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
+		Get(fmt.Sprintf("http://accrual_app%s/api/orders/%d", ac.AccrualSystemAddress, orderNumber))
 
 	if err != nil {
 		return nil, err
