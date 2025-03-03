@@ -24,18 +24,18 @@ jobs:
     #   with:
     #     version: v1.64
 
-    - name: Run Tests with Coverage
+    - name: Run Unit Tests with Coverage
       run: |
         mkdir -p coverage
-        go test ./... -coverprofile=coverage/coverage.out
+        go test -tags=unit ./... -coverprofile=coverage/coverage.out
         go tool cover -func=coverage/coverage.out
 
-    - name: Build and run in Docker using Docker-Compose
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y docker-compose
-        cp .env.example .env
-        docker-compose up
+    # - name: Build and run in Docker using Docker-Compose
+    #   run: |
+    #     sudo apt-get update
+    #     sudo apt-get install -y docker-compose
+    #     cp .env.example .env
+    #     docker-compose up -d # TODO временно
 
 
     # - name: Install Task

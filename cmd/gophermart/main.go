@@ -1,13 +1,14 @@
 package main
 
 import (
+	"errors"
+	"gophermart/cmd/gophermart/clients"
 	"gophermart/cmd/gophermart/config"
 	"gophermart/cmd/gophermart/handlers"
 	"gophermart/cmd/gophermart/logger"
 	"gophermart/cmd/gophermart/routing"
-	db "gophermart/cmd/gophermart/storage"
+	"gophermart/cmd/gophermart/storage"
 	"gophermart/cmd/gophermart/user"
-	"gophermart/cmd/gophermart/utils"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -25,15 +26,20 @@ func main() {
 		sugarLogger.Fatalf("Failed to initialize config")
 	}
 
-	s := db.NewStorage(c)
+	s, err := storage.NewStorage(c)
+	if errors.Is(err, storage.ErrOpenDBConnection) {
+		sugarLogger.Fatalf("Error opening database connection: %v\n", err)
+	} else if errors.Is(err, storage.ErrConnecting) {
+		sugarLogger.Fatalf("Error connecting to database: %v\n", err)
+	}
 
 	userService := user.NewUserService()
-	wp := handlers.NewWorkerPool(c.NumWorkers, c.MaxRequestsPerMin)
-	accrualService := utils.NewAccrualService(c.AccrualSystemAddress)
-	ctrl := handlers.NewController(c, s, sugarLogger, userService, wp, accrualService)
+	wp := handlers.NewAccrualQueue(c.NumWorkers, c.MaxRequestsPerMin)
+	accrualClient := clients.NewAccrualClient(c.AccrualSystemAddress, sugarLogger)
+	ctrl := handlers.NewController(c, s, sugarLogger, userService, wp, accrualClient)
 
 	// Регистрация информации о вознаграждении за товар (POST /api/goods) @@@
-	ctrl.AccrualService.RegisterRewards()
+	ctrl.AccrualClient.RegisterRewards()
 
 	r := chi.NewRouter()
 

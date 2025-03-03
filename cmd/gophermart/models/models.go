@@ -2,14 +2,15 @@ package models
 
 import (
 	"time"
-	"unicode"
+
+	"github.com/EClaesson/go-luhn"
 )
 
 type Order struct {
-	Number     string  `json:"number"`
-	Status     string  `json:"status"`
-	Accrual    float64 `json:"accrual,omitempty"`
-	UploadedAt string  `json:"uploaded_at"`
+	Number     string    `json:"number"`
+	Status     string    `json:"status"`
+	Accrual    float64   `json:"accrual,omitempty"`
+	UploadedAt time.Time `json:"uploaded_at"`
 }
 
 type UserBalance struct {
@@ -51,10 +52,6 @@ type RewardRequest struct {
 }
 
 func IsValidOrderNumber(number string) bool {
-	for _, n := range number {
-		if !unicode.IsDigit(n) {
-			return false
-		}
-	}
-	return true
+	res, _ := luhn.IsValid(number)
+	return res
 }

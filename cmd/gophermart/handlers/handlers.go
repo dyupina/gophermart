@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
+	"gophermart/cmd/gophermart/clients"
 	"gophermart/cmd/gophermart/config"
 	"gophermart/cmd/gophermart/models"
 	"gophermart/cmd/gophermart/storage"
 	"gophermart/cmd/gophermart/user"
-	"gophermart/cmd/gophermart/utils"
 	"io"
 	"net/http"
 	"strconv"
@@ -22,24 +22,49 @@ type Controller struct {
 	storageService storage.StorageService
 	sugar          *zap.SugaredLogger
 	userService    user.UserService
-	workerPool     *WorkerPool
-	AccrualService utils.AccrualService
+	accrualQueue   *AccrualQueue
+	AccrualClient  clients.AccrualClient
 }
 
+var (
+	ErrUpdateUserBalance = errors.New("error UpdateUserBalance")
+	ErrUpdateOrder       = errors.New("error UpdateOrder")
+	ErrRetryAfter        = errors.New("error invalid Retry-After value")
+	ErrNoOKfromAccrual   = errors.New("response from Accrual with StatusCode != StatusOK")
+	ErrAccrualRequest    = errors.New("error sending GET request")
+)
+
 func NewController(conf *config.Config, storageService storage.StorageService,
-	logger *zap.SugaredLogger, us user.UserService, wp *WorkerPool, accrualService utils.AccrualService) *Controller {
+	logger *zap.SugaredLogger, us user.UserService, wp *AccrualQueue, accrualService clients.AccrualClient) *Controller {
 	con := &Controller{
 		conf:           conf,
 		storageService: storageService,
 		sugar:          logger,
 		userService:    us,
-		workerPool:     wp,
-		AccrualService: accrualService,
+		accrualQueue:   wp,
+		AccrualClient:  accrualService,
 	}
 
-	con.workerPool.Start(con)
+	con.accrualQueue.Start(con)
 
 	return con
+}
+
+func (con *Controller) handleAuth(res http.ResponseWriter, userID string, user_ user.User) {
+	storedHashedPassword := con.storageService.GetHashedPasswordByLogin(user_.Login)
+	if storedHashedPassword == "" || !con.storageService.CheckPasswordHash(user_.Password, storedHashedPassword) {
+		con.Debug(res, "Unauthorized: Invalid login/password", http.StatusUnauthorized)
+		return
+	}
+
+	err := con.storageService.SaveUID(userID, user_.Login)
+	if err != nil {
+		con.Debug(res, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	_ = con.userService.SetUserIDCookie(res, userID)
+	con.Debug(res, "Login success", http.StatusOK)
 }
 
 func (con *Controller) Register() http.HandlerFunc {
@@ -67,8 +92,7 @@ func (con *Controller) Register() http.HandlerFunc {
 			return
 		}
 
-		_ = con.userService.SetUserIDCookie(res, userID)
-		con.Debug(res, "Register success", http.StatusOK)
+		con.handleAuth(res, userID, user_)
 	}
 }
 
@@ -82,20 +106,7 @@ func (con *Controller) Login() http.HandlerFunc {
 			con.Debug(res, "Bad request", http.StatusBadRequest)
 			return
 		}
-
-		storedHashedPassword := con.storageService.GetHashedPasswordByLogin(user_.Login)
-		if storedHashedPassword == "" || !con.storageService.CheckPasswordHash(user_.Password, storedHashedPassword) {
-			con.Debug(res, "Unauthorized: Invalid login/password", http.StatusUnauthorized)
-			return
-		}
-
-		err = con.storageService.SaveUID(userID, user_.Login)
-		if err != nil {
-			con.Debug(res, "Bad request", http.StatusBadRequest)
-			return
-		}
-		_ = con.userService.SetUserIDCookie(res, userID)
-		con.Debug(res, "Login success", http.StatusOK)
+		con.handleAuth(res, userID, user_)
 	}
 }
 
@@ -122,11 +133,11 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 		}
 
 		// TEST @@@ Типа совершаем покупку (POST /api/orders)
-		con.AccrualService.MakePurchase(orderNumber)
+		// con.AccrualClient.MakePurchase(orderNumber)
 
 		orderAdded, err := con.storageService.AddOrder(userLogin, orderNumber)
 		if err != nil {
-			if err.Error() == "conflict" {
+			if errors.Is(err, storage.ErrAddOrderConflict) {
 				con.Debug(res, "Conflict", http.StatusConflict)
 				return
 			}
@@ -135,7 +146,7 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 		}
 
 		// 3. Заказ попадает в систему расчёта баллов лояльности (в Accrual) @@@
-		con.workerPool.AddTask(Task{UserLogin: userLogin, OrderNumber: orderNumber})
+		con.accrualQueue.AddTask(Task{UserLogin: userLogin, OrderNumber: orderNumber})
 
 		_ = con.userService.SetUserIDCookie(res, userID)
 		if orderAdded {
@@ -171,13 +182,13 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 		for i, order := range orders {
 			orderNumber, _ := strconv.Atoi(order.Number)
 			tasks[i] = Task{UserLogin: userLogin, OrderNumber: orderNumber}
-			con.workerPool.AddTask(tasks[i])
+			con.accrualQueue.AddTask(tasks[i])
 		}
 
 		go func() {
 			for range tasks {
 				select {
-				case result := <-con.workerPool.results:
+				case result := <-con.accrualQueue.results:
 					for i, order := range orders {
 						if order.Number == result.Order {
 							orders[i].Status = result.Status
@@ -185,11 +196,14 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 							break
 						}
 					}
-				case errA := <-con.workerPool.errors:
-					if errA.Error() == "error UpdateUserBalance" {
-						con.Debug(res, "error UpdateUserBalance", http.StatusInternalServerError)
-					} else if errA.Error() == "Error UpdateOrder" {
+				case errA := <-con.accrualQueue.errors:
+					switch {
+					case errors.Is(errA, ErrUpdateUserBalance):
+						con.Debug(res, "Error UpdateUserBalance", http.StatusInternalServerError)
+					case errors.Is(errA, ErrUpdateOrder):
 						con.Debug(res, "Error UpdateOrder", http.StatusInternalServerError)
+						// default:
+						// 	con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
 					}
 					return
 				}
@@ -248,7 +262,7 @@ func (con *Controller) RequestForWithdrawal() http.HandlerFunc {
 		on, _ := strconv.Atoi(orderNumber)
 		err := con.storageService.WithdrawFromUserBalance(userLogin, on, wr.Sum)
 		if err != nil {
-			if err.Error() == "insufficient funds" {
+			if errors.Is(err, storage.ErrInsufficientFunds) {
 				con.Debug(res, "Insufficient funds", http.StatusPaymentRequired)
 			} else {
 				con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
@@ -289,10 +303,9 @@ func (con *Controller) InfoAboutWithdrawals() http.HandlerFunc {
 
 // Запрос в систему расчёта баллов лояльности (в Accrual) @@@ GET /api/orders/{number}
 func (con *Controller) RequestToAccrual(userLogin string, orderNumber int) (*models.AccrualResponse, error) {
-	resp, err := con.AccrualService.RequestToAccrualByOrderumber(orderNumber)
+	resp, err := con.AccrualClient.RequestToAccrualByOrderumber(orderNumber)
 	if err != nil {
-		fmt.Println("Error sending GET request:", err)
-		return nil, err
+		return nil, ErrAccrualRequest
 	}
 
 	var accrualResponse *models.AccrualResponse
@@ -305,23 +318,23 @@ func (con *Controller) RequestToAccrual(userLogin string, orderNumber int) (*mod
 
 		// Обновить данные о бонусах в таблице users_balances
 		if err = con.storageService.UpdateUserBalance(userLogin, orderNumber, accrual); err != nil {
-			return nil, fmt.Errorf("error UpdateUserBalance")
+			return nil, ErrUpdateUserBalance
 		}
 
 		// Обновить данные о заказе в таблице orders
 		if err = con.storageService.UpdateOrder(orderNumber, status, accrual); err != nil {
-			return nil, fmt.Errorf("error UpdateOrder")
+			return nil, ErrUpdateOrder
 		}
 	} else if resp.StatusCode() == http.StatusTooManyRequests {
 		retryAfter := resp.Header().Get("Retry-After")
 		retryAfterDuration, err := strconv.Atoi(retryAfter)
 		if err != nil {
-			return nil, fmt.Errorf("invalid Retry-After value")
+			return nil, ErrRetryAfter
 		}
 		con.sugar.Debugf("Rate limit exceeded, pausing for %d seconds\n", retryAfterDuration)
 		time.Sleep(time.Duration(retryAfterDuration) * time.Second)
 	} else {
-		return nil, fmt.Errorf("response from Accrual with StatusCode != StatusOK")
+		return nil, ErrNoOKfromAccrual
 	}
 
 	return accrualResponse, nil

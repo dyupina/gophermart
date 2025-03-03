@@ -3,7 +3,7 @@ package storage
 import (
 	"database/sql"
 	"embed"
-	"fmt"
+	"errors"
 	"gophermart/cmd/gophermart/config"
 	"gophermart/cmd/gophermart/models"
 	"log"
@@ -21,7 +21,7 @@ type StorageService interface {
 	GetHashedPasswordByLogin(login string) string
 	SaveUID(userID, login string) error
 	GetLoginByUID(userID string) string
-	AddOrder(userLogin string, orderNumber int) (bool, error)
+	AddOrder(userLogin string, orderNumber int) (isAddedToDB bool, err error)
 	GetOrders(userLogin string) ([]models.Order, error)
 	UpdateOrder(orderNumber int, status string, accrual float64) error
 	GetUserBalance(userLogin string) (models.UserBalance, error)
@@ -33,6 +33,15 @@ type StorageService interface {
 type StorageDB struct {
 	DBConn *sql.DB
 }
+
+var (
+	ErrAddOrderConflict  = errors.New("error AddOrder Conflict")
+	ErrInsufficientFunds = errors.New("error insufficient funds")
+	ErrGetUserBalance    = errors.New("error in getting balance")
+	ErrOpenDBConnection  = errors.New("error opening database connection")
+	ErrConnecting        = errors.New("error connecting to database")
+	ErrTransaction       = errors.New("error transaction")
+)
 
 //go:embed db/migrations/*.sql
 var embedMigrations embed.FS
@@ -49,23 +58,21 @@ func UpDBMigrations(db *sql.DB) {
 	}
 }
 
-func NewStorage(c *config.Config) StorageService {
-	DBConn, err := sql.Open("pgx", c.DBConnection)
+func NewStorage(c *config.Config) (*StorageDB, error) {
+	dbConn, err := sql.Open("pgx", c.DBConnection)
 	if err != nil {
-		log.Printf("Error opening database connection: %v\n", err)
-		return nil
+		return nil, ErrOpenDBConnection
 	}
 
-	if err := DBConn.Ping(); err != nil {
-		log.Printf("Error connecting to database: %v\n", err)
-		return nil
+	if err := dbConn.Ping(); err != nil {
+		return nil, ErrConnecting
 	}
 
-	UpDBMigrations(DBConn)
+	UpDBMigrations(dbConn)
 
 	return &StorageDB{
-		DBConn: DBConn,
-	}
+		DBConn: dbConn,
+	}, nil
 }
 
 func (s *StorageDB) HashPassword(password string) (string, error) {
@@ -80,10 +87,9 @@ func (s *StorageDB) CheckPasswordHash(password, hash string) bool {
 
 func (s *StorageDB) SaveLoginPassword(login, hashedPassword string) bool {
 	_, err1 := s.DBConn.Exec("INSERT INTO users (login, password) VALUES ($1, $2)", login, hashedPassword)
-	_, err2 := s.DBConn.Exec("INSERT INTO users_orders (login, orders) VALUES ($1, '{}')", login)
 	_, err3 := s.DBConn.Exec("INSERT INTO users_balances (login) VALUES ($1)", login)
 
-	return err1 == nil && err2 == nil && err3 == nil
+	return err1 == nil && err3 == nil
 }
 
 func (s *StorageDB) GetHashedPasswordByLogin(login string) string {
@@ -103,47 +109,47 @@ func (s *StorageDB) GetLoginByUID(userID string) string {
 	return login
 }
 
-func (s *StorageDB) AddOrder(userLogin string, orderNumber int) (bool, error) {
-	row := s.DBConn.QueryRow("SELECT login FROM users_orders WHERE $1 = ANY(orders) AND login != $2", orderNumber, userLogin)
-	if err := row.Scan(new(string)); err != sql.ErrNoRows {
+var selectLoginFromUsersOrders = "SELECT login FROM orders WHERE number = $1 AND login != $2"
+var isOrderNumberExistsForLogin = "SELECT 1 FROM orders WHERE login = $1 AND number = $2"
+var insertNewOrder = "INSERT INTO orders (login, number, status, uploaded_at) VALUES ($1, $2, $3, $4)"
+
+func (s *StorageDB) AddOrder(userLogin string, orderNumber int) (isAddedToDB bool, err error) {
+	isAddedToDB = false
+
+	// проверяем есть ли заказ orderNumber у другого пользователя
+	row := s.DBConn.QueryRow(selectLoginFromUsersOrders, orderNumber, userLogin)
+	if err := row.Scan(new(string)); !errors.Is(err, sql.ErrNoRows) {
 		if err == nil {
-			return false, fmt.Errorf("conflict") // StatusConflict
+			return isAddedToDB, ErrAddOrderConflict // StatusConflict
 		}
-		return false, err
+		return isAddedToDB, err
 	}
 
-	// существует ли запись с orderNumber в users_orders
-	row = s.DBConn.QueryRow("SELECT 1 FROM users_orders WHERE login = $1 AND $2 = ANY(orders)", userLogin, orderNumber)
-	if err := row.Scan(new(int)); err != sql.ErrNoRows {
+	// существует ли запись с orderNumber в orders для заданного userLogin
+	row = s.DBConn.QueryRow(isOrderNumberExistsForLogin, userLogin, orderNumber)
+	if err := row.Scan(new(int)); !errors.Is(err, sql.ErrNoRows) {
 		if err == nil {
-			return false, nil // StatusOK номер заказа уже был загружен этим пользователем
+			return isAddedToDB, nil // StatusOK номер заказа уже был загружен этим пользователем
 		}
-		return false, err
-	}
-
-	_, err := s.DBConn.Exec("UPDATE users_orders SET orders = array_append(orders, $2) WHERE login = $1", userLogin, orderNumber)
-	if err != nil {
-		return false, err
+		return isAddedToDB, err
 	}
 
 	// Сохранить в таблице orders
-	_, err = s.DBConn.Exec(
-		"INSERT INTO orders (number, status, uploaded_at) VALUES ($1, $2, $3)",
-		orderNumber, "NEW", time.Now())
+	_, err = s.DBConn.Exec(insertNewOrder, userLogin, orderNumber, "NEW", time.Now())
 	if err != nil {
-		return false, err
+		return isAddedToDB, err
 	}
 
-	return true, nil // StatusAccepted новый номер заказа принят в обработку
+	isAddedToDB = true
+	return isAddedToDB, nil // StatusAccepted новый номер заказа принят в обработку
 }
 
 func (s *StorageDB) GetOrders(userLogin string) ([]models.Order, error) {
 	rows, err := s.DBConn.Query(`
-		SELECT o.number, o.status, o.accrual, o.uploaded_at
-        FROM orders o
-        JOIN users_orders uo ON o.number = ANY(uo.orders)
-        WHERE uo.login = $1
-        ORDER BY o.uploaded_at DESC
+		SELECT number, status, accrual, uploaded_at
+        FROM orders
+        WHERE login = $1
+        ORDER BY uploaded_at DESC
     `, userLogin)
 	// DESC - в порядке убывания
 
@@ -161,38 +167,31 @@ func (s *StorageDB) GetOrders(userLogin string) ([]models.Order, error) {
 		if err != nil {
 			return nil, err
 		}
-		order.UploadedAt = uploadedAt.Format(time.RFC3339)
+		order.UploadedAt = time.Now()
 		orders = append(orders, order)
 	}
 
 	return orders, nil
 }
 
+var updateOrder = "UPDATE orders SET status = $1, accrual = $2, accrual_added = (TRUE) WHERE number = $3"
+
 func (s *StorageDB) UpdateOrder(orderNumber int, status string, accrual float64) error {
-	tx, err := s.DBConn.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-			log.Printf("rollback error: %v", err)
-		}
-	}()
-
-	_, err = tx.Exec("UPDATE orders SET status = $1, accrual = $2, accrual_added = (TRUE) WHERE number = $3", status, accrual, orderNumber)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	_, err := s.DBConn.Exec(updateOrder, status, accrual, orderNumber)
+	return err
 }
+
+var getUserBalance = "SELECT current, withdrawn FROM users_balances WHERE login = $1"
 
 func (s *StorageDB) GetUserBalance(userLogin string) (models.UserBalance, error) {
 	var balance models.UserBalance
-	err := s.DBConn.QueryRow(`SELECT current, withdrawn 
-	FROM users_balances WHERE login = $1`, userLogin).Scan(&balance.Current, &balance.Withdrawn)
+	err := s.DBConn.QueryRow(getUserBalance, userLogin).Scan(&balance.Current, &balance.Withdrawn)
 
-	return balance, err
+	if err != nil {
+		return models.UserBalance{}, ErrGetUserBalance
+	}
+
+	return balance, nil
 }
 
 func (s *StorageDB) UpdateUserBalance(userLogin string, orderNumber int, accrualToAdd float64) error {
@@ -217,8 +216,16 @@ func (s *StorageDB) UpdateUserBalance(userLogin string, orderNumber int, accrual
 		return err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return ErrTransaction
+	}
+
+	return nil
 }
+
+var getCurrentBalance = "SELECT current FROM users_balances WHERE login = $1"
+var updateMoney = "UPDATE users_balances SET current = current - $1, withdrawn = withdrawn + $1 WHERE login = $2"
 
 func (s *StorageDB) WithdrawFromUserBalance(userLogin string, orderNumber int, amount float64) error {
 	var currentBalance float64
@@ -233,34 +240,34 @@ func (s *StorageDB) WithdrawFromUserBalance(userLogin string, orderNumber int, a
 		}
 	}()
 
-	err = tx.QueryRow("SELECT current FROM users_balances WHERE login = $1", userLogin).Scan(&currentBalance)
+	err = tx.QueryRow(getCurrentBalance, userLogin).Scan(&currentBalance)
 	if err != nil {
 		return err
 	}
 
 	if currentBalance < amount {
-		return fmt.Errorf("insufficient funds")
+		return ErrInsufficientFunds
 	}
-
-	_, err = tx.Exec("UPDATE users_balances SET current = current - $1, withdrawn = withdrawn + $1 WHERE login = $2", amount, userLogin)
+	_, err = tx.Exec(updateMoney, amount, userLogin)
 	if err != nil {
 		return err
 	}
 
-	// Добавить запись о списании средств, если для order_number ее еще не было. И если была, то обновить
-	// EXCLUDED - это специальная псевдонимная таблица, которая ссылается на предполагаемое новое значение в случае конфликта
+	// Добавляем _каждую_ операцию списания
 	_, err = s.DBConn.Exec(`
 		INSERT INTO users_withdrawals (login, order_number, sum, processed_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (order_number) DO UPDATE 
-		SET sum = users_withdrawals.sum + EXCLUDED.sum, 
-			processed_at = EXCLUDED.processed_at`, userLogin, orderNumber, amount, time.Now())
+		VALUES ($1, $2, $3, $4)`, userLogin, orderNumber, amount, time.Now())
 
 	if err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return ErrTransaction
+	}
+
+	return nil
 }
 
 func (s *StorageDB) GetUserWithdrawals(userLogin string) ([]models.Withdrawal, error) {

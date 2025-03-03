@@ -11,7 +11,7 @@ type Task struct {
 	OrderNumber int
 }
 
-type WorkerPool struct {
+type AccrualQueue struct {
 	tasks       chan Task
 	results     chan *models.AccrualResponse
 	errors      chan error
@@ -22,9 +22,9 @@ type WorkerPool struct {
 
 const bufSize = 100
 
-func NewWorkerPool(workerCount, maxRequestsPerMinute int) *WorkerPool {
+func NewAccrualQueue(workerCount, maxRequestsPerMinute int) *AccrualQueue {
 	interval := time.Minute / time.Duration(maxRequestsPerMinute)
-	return &WorkerPool{
+	return &AccrualQueue{
 		tasks:       make(chan Task, bufSize),
 		results:     make(chan *models.AccrualResponse),
 		errors:      make(chan error),
@@ -34,13 +34,13 @@ func NewWorkerPool(workerCount, maxRequestsPerMinute int) *WorkerPool {
 	}
 }
 
-func (wp *WorkerPool) Start(con *Controller) {
+func (wp *AccrualQueue) Start(con *Controller) {
 	for i := 0; i < wp.workerCount; i++ {
 		go wp.worker(con)
 	}
 }
 
-func (wp *WorkerPool) worker(con *Controller) {
+func (wp *AccrualQueue) worker(con *Controller) {
 	for task := range wp.tasks {
 		<-wp.throttle.C // Контроль частоты запросов
 
@@ -55,7 +55,7 @@ func (wp *WorkerPool) worker(con *Controller) {
 	}
 }
 
-func (wp *WorkerPool) AddTask(task Task) {
+func (wp *AccrualQueue) AddTask(task Task) {
 	wp.wg.Add(1)
 	wp.tasks <- task
 }

@@ -1,0 +1,23 @@
+# Первый этап - сборка
+FROM golang:latest AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY ./cmd/gophermart ./cmd/gophermart
+
+RUN go build -buildvcs=false -tags=unit -tags=integration -o gophermart ./cmd/gophermart
+
+# Второй этап - создание финального образа
+FROM debian:latest
+
+WORKDIR /app
+
+# Копируем скомпилированный бинарный файл из стадии сборки в финальный образ
+COPY --from=builder /app/gophermart /app/
+
+RUN chmod +x /app/gophermart
+
+CMD ["./gophermart"]

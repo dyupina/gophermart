@@ -26,7 +26,7 @@ func newSecurecookie() *securecookie.SecureCookie {
 	return securecookie.New(hashKey, blockKey)
 }
 
-func NewUserService() UserService {
+func NewUserService() *User {
 	return &User{
 		cookieName: "AuthToken",
 		cookie:     newSecurecookie(),

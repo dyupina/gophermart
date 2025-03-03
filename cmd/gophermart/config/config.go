@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -22,7 +24,7 @@ func NewConfig() *Config {
 		AccrualSystemAddress: ":8080",
 		Timeout:              15,
 		NumWorkers:           2,
-		MaxRequestsPerMin:    120,
+		MaxRequestsPerMin:    240,
 	}
 }
 
@@ -48,10 +50,14 @@ func Init(c *Config) error {
 	fmt.Printf("c.AccrualSystemAddress %s\n", c.AccrualSystemAddress)
 
 	if c.DBConnection == "" {
-		return fmt.Errorf("set DATABASE_URI env variable")
+		return errors.New("set DATABASE_URI env variable")
 	}
 	if c.AccrualSystemAddress == "" {
-		return fmt.Errorf("set ACCRUAL_SYSTEM_ADDRESS env variable")
+		return errors.New("set ACCRUAL_SYSTEM_ADDRESS env variable")
+	}
+
+	if !strings.HasPrefix(c.AccrualSystemAddress, "http://") {
+		c.AccrualSystemAddress = "http://" + c.AccrualSystemAddress
 	}
 
 	return nil

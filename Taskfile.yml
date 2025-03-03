@@ -13,19 +13,29 @@ dotenv: ['.env']
 tasks:
   all:
     # deps: [clean, run-accrual, run]
-    deps: [lint, run-docker-compose]
+    deps: [clean, lint, run-docker-compose]
 
   run-docker-compose:
     cmds:
-      - sudo docker-compose up
+      - sudo docker-compose up --build
       # локально запускаю с sudo, тк почему-то даже после добавления $USER в группу docker
       # без sudo ошибки запуска
+  
+  test_integration:
+    cmds:
+      - sudo docker-compose up -d --build
+      - go test ./... -tags=integration
+    deps: [clean]
 
   lint:
     cmds:
       - echo "Linting {{.binary_name}}..."
       - "task taskfile_lint:install-linter" # TODO remove ?
       - "task taskfile_lint:lint"
+  
+  clean:
+    cmds:
+      - sudo docker-compose down
 
   # build:
   #   cmds:

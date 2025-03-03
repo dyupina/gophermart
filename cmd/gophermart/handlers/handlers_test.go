@@ -1,63 +1,116 @@
+//go:build unit
+// +build unit
+
 package handlers
 
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"gophermart/cmd/gophermart/config"
 	"gophermart/cmd/gophermart/logger"
 	"gophermart/cmd/gophermart/mocks"
 	"gophermart/cmd/gophermart/models"
+	"gophermart/cmd/gophermart/storage"
 	"gophermart/cmd/gophermart/user"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/ShiraazMoollatjie/goluhn"
 	"github.com/golang/mock/gomock"
 )
 
-func prepare(t *testing.T) (*mocks.MockStorageService, *mocks.MockUserService, *mocks.MockAccrualService, *Controller) {
+func prepare(t *testing.T) (*mocks.MockStorageService, *mocks.MockUserService, *mocks.MockAccrualClient, *Controller) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	sugarLogger, _ := logger.NewLogger()
 	conf := config.NewConfig()
 	// _ = config.Init(conf) // TODO ???
-	wp := NewWorkerPool(conf.NumWorkers, conf.MaxRequestsPerMin)
+	wp := NewAccrualQueue(conf.NumWorkers, conf.MaxRequestsPerMin)
 	mockStorageService := mocks.NewMockStorageService(ctrl)
 	mockUserService := mocks.NewMockUserService(ctrl)
-	mockAccrualService := mocks.NewMockAccrualService(ctrl)
+	mockAccrualClient := mocks.NewMockAccrualClient(ctrl)
 
-	controller := NewController(conf, mockStorageService, sugarLogger, mockUserService, wp, mockAccrualService)
+	controller := NewController(conf, mockStorageService, sugarLogger, mockUserService, wp, mockAccrualClient)
 
-	// mockAccrualService.EXPECT().RegisterRewards().Times(1)
-	return mockStorageService, mockUserService, mockAccrualService, controller
+	// mockAccrualClient.EXPECT().RegisterRewards().Times(1)
+	return mockStorageService, mockUserService, mockAccrualClient, controller
 }
 
 func Test_Register(t *testing.T) {
-	mockStorageService, mockUserService, _, controller := prepare(t)
+	tests := []struct {
+		name           string
+		requestBody    user.User
+		mockSetup      func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService)
+		expectedStatus int
+	}{
+		{
+			name: "Successful Register",
+			requestBody: user.User{
+				Login:    "testUser",
+				Password: "testPassword",
+			},
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+				// Ожидания для методов, вызываемых в handleAuth
+				storage.EXPECT().GetHashedPasswordByLogin("testUser").Return("hashedPassword")
+				storage.EXPECT().CheckPasswordHash("testPassword", "hashedPassword").Return(true)
+				storage.EXPECT().SaveUID("testUserID", "testUser").Return(nil)
 
-	mockStorageService.EXPECT().HashPassword("testPassword").Return("hashedPassword", nil)
-	mockStorageService.EXPECT().SaveLoginPassword("testUser", "hashedPassword").Return(true)
-	mockUserService.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
-
-	reqBody, _ := json.Marshal(map[string]string{
-		"login":    "testUser",
-		"password": "testPassword",
-	})
-	req := httptest.NewRequest("POST", "/api/user/register", bytes.NewReader(reqBody))
-	req.Header.Set("User-ID", "testUserID")
-	w := httptest.NewRecorder()
-
-	handler := controller.Register()
-	handler.ServeHTTP(w, req)
-
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status OK; got %v", resp.StatusCode)
+				storage.EXPECT().HashPassword("testPassword").Return("hashedPassword", nil)
+				storage.EXPECT().SaveLoginPassword("testUser", "hashedPassword").Return(true)
+				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "Conflict",
+			requestBody: user.User{
+				Login:    "testUserDuplicate",
+				Password: "testPasswordDuplicate",
+			},
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+				storage.EXPECT().HashPassword("testPasswordDuplicate").Return("hashedPasswordDuplicate", nil)
+				storage.EXPECT().SaveLoginPassword("testUserDuplicate", "hashedPasswordDuplicate").Return(false)
+			},
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name: "Internal server error",
+			requestBody: user.User{
+				Login:    "testUser",
+				Password: "testPassword",
+			},
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+				storage.EXPECT().HashPassword("testPassword").Return("hashedPassword", errors.New("some err"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+		},
 	}
-	resp.Body.Close()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockStorageService, mockUserService, _, controller := prepare(t)
+			tt.mockSetup(mockStorageService, mockUserService)
+
+			reqBody, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest("POST", "/api/user/register", bytes.NewReader(reqBody))
+			req.Header.Set("User-ID", "testUserID")
+			w := httptest.NewRecorder()
+
+			handler := controller.Register()
+			handler.ServeHTTP(w, req)
+
+			resp := w.Result()
+			if resp.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %v; got %v", tt.expectedStatus, resp.StatusCode)
+			}
+			resp.Body.Close()
+		})
+	}
 }
 
 func Test_Login(t *testing.T) {
@@ -138,23 +191,26 @@ func Test_Login(t *testing.T) {
 }
 
 func Test_OrdersUpload(t *testing.T) {
+	orderNumber := goluhn.Generate(10)
+	orderNumberInt, _ := strconv.Atoi(orderNumber)
+	errAddOrderConflict := storage.ErrAddOrderConflict
 	tests := []struct {
 		name           string
 		userID         string
 		contentType    string
 		body           string
-		mockSetup      func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualService)
+		mockSetup      func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient)
 		expectedStatus int
 	}{
 		{
 			name:        "Successful Order Upload",
 			userID:      "testUserID",
 			contentType: "text/plain",
-			body:        "12345678",
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualService) {
+			body:        orderNumber,
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
 				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
-				accSrv.EXPECT().MakePurchase(12345678)
-				storage.EXPECT().AddOrder("testUser", 12345678).Return(true, nil)
+				accSrv.EXPECT().MakePurchase(orderNumber)
+				storage.EXPECT().AddOrder("testUser", orderNumberInt).Return(true, nil)
 				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
 			},
 			expectedStatus: http.StatusAccepted,
@@ -163,8 +219,8 @@ func Test_OrdersUpload(t *testing.T) {
 			name:        "Unauthorized User",
 			userID:      "unknownUserID",
 			contentType: "text/plain",
-			body:        "12345678",
-			mockSetup: func(storage *mocks.MockStorageService, _ *mocks.MockUserService, _ *mocks.MockAccrualService) {
+			body:        orderNumber,
+			mockSetup: func(storage *mocks.MockStorageService, _ *mocks.MockUserService, _ *mocks.MockAccrualClient) {
 				storage.EXPECT().GetLoginByUID("unknownUserID").Return("")
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -173,18 +229,67 @@ func Test_OrdersUpload(t *testing.T) {
 			name:        "Bad Request - Invalid Content Type",
 			userID:      "testUserID",
 			contentType: "application/json", // должен быть "text/plain"
-			body:        "12345678",
-			mockSetup: func(storage *mocks.MockStorageService, _ *mocks.MockUserService, _ *mocks.MockAccrualService) {
+			body:        orderNumber,
+			mockSetup: func(storage *mocks.MockStorageService, _ *mocks.MockUserService, _ *mocks.MockAccrualClient) {
 				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
 			},
 			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:        "Conflict",
+			userID:      "testUserID",
+			contentType: "text/plain",
+			body:        orderNumber,
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				accSrv.EXPECT().MakePurchase(orderNumber)
+				storage.EXPECT().AddOrder("testUser", orderNumberInt).Return(true, errAddOrderConflict)
+			},
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:        "Unprocessable Entity",
+			userID:      "testUserID",
+			contentType: "text/plain",
+			body:        "12345678", // неподходящий номер
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				accSrv.EXPECT().MakePurchase("12345678")
+				storage.EXPECT().AddOrder("testUser", 12345678).Return(true, errors.New("some err"))
+			},
+			expectedStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:        "Internal Server Error",
+			userID:      "testUserID",
+			contentType: "text/plain",
+			body:        orderNumber,
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				accSrv.EXPECT().MakePurchase(orderNumber)
+				storage.EXPECT().AddOrder("testUser", orderNumberInt).Return(true, errors.New("not ErrAddOrderConflict"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name:        "Duplicate Order Upload",
+			userID:      "testUserID",
+			contentType: "text/plain",
+			body:        orderNumber,
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				accSrv.EXPECT().MakePurchase(orderNumber)
+				storage.EXPECT().AddOrder("testUser", orderNumberInt).Return(false, nil)
+				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
+			},
+			expectedStatus: http.StatusOK,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, mockAccrualService, controller := prepare(t)
-			tt.mockSetup(mockStorageService, mockUserService, mockAccrualService)
+			mockStorageService, mockUserService, mockAccrualClient, controller := prepare(t)
+			tt.mockSetup(mockStorageService, mockUserService, mockAccrualClient)
 
 			req := httptest.NewRequest("POST", "/api/user/orders", bytes.NewReader([]byte(tt.body)))
 			req.Header.Set("User-ID", tt.userID)
@@ -204,35 +309,38 @@ func Test_OrdersUpload(t *testing.T) {
 }
 
 func Test_OrdersGet(t *testing.T) {
+	orderNumber1 := goluhn.Generate(10)
+	orderNumber2 := goluhn.Generate(10)
+
 	tests := []struct {
 		name           string
 		userID         string
-		mockSetup      func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualService)
+		mockSetup      func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient)
 		expectedStatus int
 		expectedBody   interface{}
 	}{
 		{
 			name:   "Successful Getting Orders",
 			userID: "testUserID",
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualService) {
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
 				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
-				accSrv.EXPECT().MakePurchase(12345678)
+				accSrv.EXPECT().MakePurchase(orderNumber1)
 				storage.EXPECT().GetOrders("testUser").Return([]models.Order{
-					{Number: "23456789", Status: "PROCESSED", Accrual: 10.0},
-					{Number: "12345678", Status: "PROCESSING"},
+					{Number: orderNumber2, Status: "PROCESSED", Accrual: 10.0},
+					{Number: orderNumber1, Status: "PROCESSING"},
 				}, nil)
 				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: []models.Order{
-				{Number: "23456789", Status: "PROCESSED", Accrual: 10.0},
-				{Number: "12345678", Status: "PROCESSING"},
+				{Number: orderNumber2, Status: "PROCESSED", Accrual: 10.0},
+				{Number: orderNumber1, Status: "PROCESSING"},
 			},
 		},
 		{
 			name:   "Unauthorized User",
 			userID: "unknownUserID",
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualService) {
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
 				storage.EXPECT().GetLoginByUID("unknownUserID").Return("")
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -241,19 +349,49 @@ func Test_OrdersGet(t *testing.T) {
 		{
 			name:   "No Content",
 			userID: "testUserID",
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualService) {
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
 				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
 				storage.EXPECT().GetOrders("testUser").Return(nil, nil)
 			},
 			expectedStatus: http.StatusNoContent,
 			expectedBody:   nil,
 		},
+		{
+			name:   "Internal Server Error",
+			userID: "testUserID",
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				storage.EXPECT().GetOrders("testUser").Return(nil, errors.New("some err"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   nil,
+		},
+		{
+			name:   "Internal Server Error (Can't update balance)",
+			userID: "testUserID",
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				storage.EXPECT().GetOrders("testUser").Return(nil, ErrUpdateUserBalance)
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   nil,
+		},
+		{
+			name:   "Internal Server Error (Can't update order)",
+			userID: "testUserID",
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService, accSrv *mocks.MockAccrualClient) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				storage.EXPECT().GetOrders("testUser").Return(nil, ErrUpdateOrder)
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   nil,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, mockAccrualService, controller := prepare(t)
-			tt.mockSetup(mockStorageService, mockUserService, mockAccrualService)
+			mockStorageService, mockUserService, mockAccrualClient, controller := prepare(t)
+			tt.mockSetup(mockStorageService, mockUserService, mockAccrualClient)
 
 			handler := controller.OrdersGet()
 
@@ -286,6 +424,7 @@ func Test_OrdersGet(t *testing.T) {
 }
 
 func Test_UserBalance(t *testing.T) {
+	errGetUserBalance := storage.ErrGetUserBalance
 	tests := []struct {
 		name           string
 		userID         string
@@ -314,6 +453,16 @@ func Test_UserBalance(t *testing.T) {
 				storage.EXPECT().GetLoginByUID("unknownUserID").Return("")
 			},
 			expectedStatus: http.StatusUnauthorized,
+			expectedBody:   nil,
+		},
+		{
+			name:   "Internal Server Error",
+			userID: "testUserID",
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				storage.EXPECT().GetUserBalance("testUser").Return(models.UserBalance{}, errGetUserBalance)
+			},
+			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   nil,
 		},
 	}
@@ -354,6 +503,9 @@ func Test_UserBalance(t *testing.T) {
 }
 
 func Test_RequestForWithdrawal(t *testing.T) {
+	orderNumber := goluhn.Generate(10)
+	orderNumberInt, _ := strconv.Atoi(orderNumber)
+
 	tests := []struct {
 		name           string
 		userID         string
@@ -365,12 +517,12 @@ func Test_RequestForWithdrawal(t *testing.T) {
 			name:   "Success Withdrawal Request",
 			userID: "testUserID",
 			requestBody: models.WithdrawRequest{
-				Order: "12345678",
+				Order: orderNumber,
 				Sum:   50.0,
 			},
 			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
 				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
-				storage.EXPECT().WithdrawFromUserBalance("testUser", 12345678, 50.0).Return(nil)
+				storage.EXPECT().WithdrawFromUserBalance("testUser", orderNumberInt, 50.0).Return(nil)
 				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -379,7 +531,7 @@ func Test_RequestForWithdrawal(t *testing.T) {
 			name:   "Unauthorized User",
 			userID: "unknownUserID",
 			requestBody: models.WithdrawRequest{
-				Order: "12345678",
+				Order: orderNumber,
 				Sum:   50.0,
 			},
 			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
@@ -403,14 +555,27 @@ func Test_RequestForWithdrawal(t *testing.T) {
 			name:   "Insufficient Funds",
 			userID: "testUserID",
 			requestBody: models.WithdrawRequest{
-				Order: "12345678",
+				Order: orderNumber,
 				Sum:   150.0, // пусть больше доступного баланса
+			},
+			mockSetup: func(storage_ *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+				storage_.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				storage_.EXPECT().WithdrawFromUserBalance("testUser", orderNumberInt, 150.0).Return(storage.ErrInsufficientFunds)
+			},
+			expectedStatus: http.StatusPaymentRequired,
+		},
+		{
+			name:   "Internal Server Error",
+			userID: "testUserID",
+			requestBody: models.WithdrawRequest{
+				Order: orderNumber,
+				Sum:   50.0,
 			},
 			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
 				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
-				storage.EXPECT().WithdrawFromUserBalance("testUser", 12345678, 150.0).Return(fmt.Errorf("insufficient funds"))
+				storage.EXPECT().WithdrawFromUserBalance("testUser", orderNumberInt, 50.0).Return(errors.New("not ErrInsufficientFunds"))
 			},
-			expectedStatus: http.StatusPaymentRequired,
+			expectedStatus: http.StatusInternalServerError,
 		},
 	}
 
@@ -440,6 +605,8 @@ func Test_RequestForWithdrawal(t *testing.T) {
 func Test_InfoAboutWithdrawals(t *testing.T) {
 	pa1 := time.Now()
 	pa2 := time.Now()
+	orderNumber1 := goluhn.Generate(10)
+	orderNumber2 := goluhn.Generate(10)
 
 	tests := []struct {
 		name           string
@@ -454,15 +621,15 @@ func Test_InfoAboutWithdrawals(t *testing.T) {
 			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
 				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
 				storage.EXPECT().GetUserWithdrawals("testUser").Return([]models.Withdrawal{
-					{Order: "1235678", Sum: 50, ProcessedAt: pa1},
-					{Order: "23456789", Sum: 30, ProcessedAt: pa2},
+					{Order: orderNumber1, Sum: 50, ProcessedAt: pa1},
+					{Order: orderNumber2, Sum: 30, ProcessedAt: pa2},
 				}, nil)
 				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: []models.Withdrawal{
-				{Order: "1235678", Sum: 50, ProcessedAt: pa1},
-				{Order: "23456789", Sum: 30, ProcessedAt: pa2},
+				{Order: orderNumber1, Sum: 50, ProcessedAt: pa1},
+				{Order: orderNumber2, Sum: 30, ProcessedAt: pa2},
 			},
 		},
 		{
@@ -482,6 +649,16 @@ func Test_InfoAboutWithdrawals(t *testing.T) {
 				storage.EXPECT().GetUserWithdrawals("testUser").Return(nil, nil)
 			},
 			expectedStatus: http.StatusNoContent,
+			expectedBody:   nil,
+		},
+		{
+			name:   "Internal Server Error",
+			userID: "testUserID",
+			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+				storage.EXPECT().GetLoginByUID("testUserID").Return("testUser")
+				storage.EXPECT().GetUserWithdrawals("testUser").Return([]models.Withdrawal{}, errors.New("some err"))
+			},
+			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   nil,
 		},
 	}

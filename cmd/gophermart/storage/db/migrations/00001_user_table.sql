@@ -1,9 +1,9 @@
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS users (
-    id       SERIAL,
+    id       SERIAL PRIMARY KEY,
     uid      TEXT,
-    login    TEXT PRIMARY KEY,
+    login    TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL
 );
 -- +goose StatementEnd
