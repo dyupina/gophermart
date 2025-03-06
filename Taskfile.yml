@@ -6,7 +6,7 @@ includes:
 vars:
   binary_name: gophermart
   # app_path: cmd/gophermart
-  # accrual_name: cmd/accrual/accrual_linux_amd64
+  accrual_name: cmd/accrual/accrual_linux_amd64
 
 dotenv: ['.env']
 
@@ -36,6 +36,13 @@ tasks:
   clean:
     cmds:
       - sudo docker-compose down
+  
+  run-local:
+    cmds:
+      - ./{{.accrual_name}} -a ":8085" -d "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost/$POSTGRES_DB?sslmode=disable" &
+      - go build -buildvcs=false -tags=unit -tags=integration -o gophermart ./cmd/gophermart
+      - ./{{.binary_name}} -a ":8081" -d "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost/$POSTGRES_DB?sslmode=disable" -r ":8085"
+
 
   # build:
   #   cmds:

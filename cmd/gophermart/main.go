@@ -36,10 +36,10 @@ func main() {
 	userService := user.NewUserService()
 	wp := handlers.NewAccrualQueue(c.NumWorkers, c.MaxRequestsPerMin)
 	accrualClient := clients.NewAccrualClient(c.AccrualSystemAddress, sugarLogger)
-	ctrl := handlers.NewController(c, s, sugarLogger, userService, wp, accrualClient)
+	ctrl := handlers.NewController(c, s, storage.NewStorageUtils(), sugarLogger, userService, wp, accrualClient)
 
 	// Регистрация информации о вознаграждении за товар (POST /api/goods) @@@
-	ctrl.AccrualClient.RegisterRewards()
+	// ctrl.AccrualClient.RegisterRewards()
 
 	r := chi.NewRouter()
 

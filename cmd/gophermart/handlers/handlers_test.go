@@ -23,7 +23,7 @@ import (
 	"github.com/golang/mock/gomock"
 )
 
-func prepare(t *testing.T) (*mocks.MockStorageService, *mocks.MockUserService, *mocks.MockAccrualClient, *Controller) {
+func prepare(t *testing.T) (*mocks.MockStorageService, *mocks.MockStorageUtils, *mocks.MockUserService, *mocks.MockAccrualClient, *Controller) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -32,20 +32,21 @@ func prepare(t *testing.T) (*mocks.MockStorageService, *mocks.MockUserService, *
 	// _ = config.Init(conf) // TODO ???
 	wp := NewAccrualQueue(conf.NumWorkers, conf.MaxRequestsPerMin)
 	mockStorageService := mocks.NewMockStorageService(ctrl)
+	mockStorageUtils := mocks.NewMockStorageUtils(ctrl)
 	mockUserService := mocks.NewMockUserService(ctrl)
 	mockAccrualClient := mocks.NewMockAccrualClient(ctrl)
 
-	controller := NewController(conf, mockStorageService, sugarLogger, mockUserService, wp, mockAccrualClient)
+	controller := NewController(conf, mockStorageService, mockStorageUtils, sugarLogger, mockUserService, wp, mockAccrualClient)
 
 	// mockAccrualClient.EXPECT().RegisterRewards().Times(1)
-	return mockStorageService, mockUserService, mockAccrualClient, controller
+	return mockStorageService, mockStorageUtils, mockUserService, mockAccrualClient, controller
 }
 
 func Test_Register(t *testing.T) {
 	tests := []struct {
 		name           string
 		requestBody    user.User
-		mockSetup      func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService)
+		mockSetup      func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, userSrv *mocks.MockUserService)
 		expectedStatus int
 	}{
 		{
@@ -54,13 +55,13 @@ func Test_Register(t *testing.T) {
 				Login:    "testUser",
 				Password: "testPassword",
 			},
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+			mockSetup: func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, userSrv *mocks.MockUserService) {
 				// Ожидания для методов, вызываемых в handleAuth
 				storage.EXPECT().GetHashedPasswordByLogin("testUser").Return("hashedPassword")
-				storage.EXPECT().CheckPasswordHash("testPassword", "hashedPassword").Return(true)
+				storageUtils.EXPECT().CheckPasswordHash("testPassword", "hashedPassword").Return(true)
 				storage.EXPECT().SaveUID("testUserID", "testUser").Return(nil)
 
-				storage.EXPECT().HashPassword("testPassword").Return("hashedPassword", nil)
+				storageUtils.EXPECT().HashPassword("testPassword").Return("hashedPassword", nil)
 				storage.EXPECT().SaveLoginPassword("testUser", "hashedPassword").Return(true)
 				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
 			},
@@ -72,8 +73,8 @@ func Test_Register(t *testing.T) {
 				Login:    "testUserDuplicate",
 				Password: "testPasswordDuplicate",
 			},
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
-				storage.EXPECT().HashPassword("testPasswordDuplicate").Return("hashedPasswordDuplicate", nil)
+			mockSetup: func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, userSrv *mocks.MockUserService) {
+				storageUtils.EXPECT().HashPassword("testPasswordDuplicate").Return("hashedPasswordDuplicate", nil)
 				storage.EXPECT().SaveLoginPassword("testUserDuplicate", "hashedPasswordDuplicate").Return(false)
 			},
 			expectedStatus: http.StatusConflict,
@@ -84,8 +85,8 @@ func Test_Register(t *testing.T) {
 				Login:    "testUser",
 				Password: "testPassword",
 			},
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
-				storage.EXPECT().HashPassword("testPassword").Return("hashedPassword", errors.New("some err"))
+			mockSetup: func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, userSrv *mocks.MockUserService) {
+				storageUtils.EXPECT().HashPassword("testPassword").Return("hashedPassword", errors.New("some err"))
 			},
 			expectedStatus: http.StatusInternalServerError,
 		},
@@ -93,8 +94,8 @@ func Test_Register(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, _, controller := prepare(t)
-			tt.mockSetup(mockStorageService, mockUserService)
+			mockStorageService, mockStorageUtils, mockUserService, _, controller := prepare(t)
+			tt.mockSetup(mockStorageService, mockStorageUtils, mockUserService)
 
 			reqBody, _ := json.Marshal(tt.requestBody)
 			req := httptest.NewRequest("POST", "/api/user/register", bytes.NewReader(reqBody))
@@ -117,7 +118,7 @@ func Test_Login(t *testing.T) {
 	tests := []struct {
 		name           string
 		requestBody    user.User
-		mockSetup      func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService)
+		mockSetup      func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, userSrv *mocks.MockUserService)
 		expectedStatus int
 	}{
 		{
@@ -126,9 +127,9 @@ func Test_Login(t *testing.T) {
 				Login:    "testUser",
 				Password: "testPassword",
 			},
-			mockSetup: func(storage *mocks.MockStorageService, userSrv *mocks.MockUserService) {
+			mockSetup: func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, userSrv *mocks.MockUserService) {
 				storage.EXPECT().GetHashedPasswordByLogin("testUser").Return("hashedPassword")
-				storage.EXPECT().CheckPasswordHash("testPassword", "hashedPassword").Return(true)
+				storageUtils.EXPECT().CheckPasswordHash("testPassword", "hashedPassword").Return(true)
 				storage.EXPECT().SaveUID("testUserID", "testUser").Return(nil)
 				userSrv.EXPECT().SetUserIDCookie(gomock.Any(), "testUserID").Return(nil)
 			},
@@ -140,9 +141,9 @@ func Test_Login(t *testing.T) {
 				Login:    "testUser",
 				Password: "wrongPassword",
 			},
-			mockSetup: func(storage *mocks.MockStorageService, _ *mocks.MockUserService) {
+			mockSetup: func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, _ *mocks.MockUserService) {
 				storage.EXPECT().GetHashedPasswordByLogin("testUser").Return("hashedPassword")
-				storage.EXPECT().CheckPasswordHash("wrongPassword", "hashedPassword").Return(false)
+				storageUtils.EXPECT().CheckPasswordHash("wrongPassword", "hashedPassword").Return(false)
 			},
 			expectedStatus: http.StatusUnauthorized,
 		},
@@ -152,7 +153,7 @@ func Test_Login(t *testing.T) {
 				Login:    "unknownUser",
 				Password: "somePassword",
 			},
-			mockSetup: func(storage *mocks.MockStorageService, _ *mocks.MockUserService) {
+			mockSetup: func(storage *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, _ *mocks.MockUserService) {
 				storage.EXPECT().GetHashedPasswordByLogin("unknownUser").Return("")
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -163,15 +164,15 @@ func Test_Login(t *testing.T) {
 				Login:    "missingPasswordUser",
 				Password: "",
 			},
-			mockSetup: func(_ *mocks.MockStorageService, _ *mocks.MockUserService) {
+			mockSetup: func(_ *mocks.MockStorageService, storageUtils *mocks.MockStorageUtils, _ *mocks.MockUserService) {
 			},
 			expectedStatus: http.StatusBadRequest,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, _, controller := prepare(t)
-			tt.mockSetup(mockStorageService, mockUserService)
+			mockStorageService, mockStorageUtils, mockUserService, _, controller := prepare(t)
+			tt.mockSetup(mockStorageService, mockStorageUtils, mockUserService)
 
 			reqBody, _ := json.Marshal(tt.requestBody)
 			req := httptest.NewRequest("POST", "/api/user/login", bytes.NewReader(reqBody))
@@ -288,7 +289,7 @@ func Test_OrdersUpload(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, mockAccrualClient, controller := prepare(t)
+			mockStorageService, _, mockUserService, mockAccrualClient, controller := prepare(t)
 			tt.mockSetup(mockStorageService, mockUserService, mockAccrualClient)
 
 			req := httptest.NewRequest("POST", "/api/user/orders", bytes.NewReader([]byte(tt.body)))
@@ -390,7 +391,7 @@ func Test_OrdersGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, mockAccrualClient, controller := prepare(t)
+			mockStorageService, _, mockUserService, mockAccrualClient, controller := prepare(t)
 			tt.mockSetup(mockStorageService, mockUserService, mockAccrualClient)
 
 			handler := controller.OrdersGet()
@@ -469,7 +470,7 @@ func Test_UserBalance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, _, controller := prepare(t)
+			mockStorageService, _, mockUserService, _, controller := prepare(t)
 			tt.mockSetup(mockStorageService, mockUserService)
 
 			handler := controller.UserBalance()
@@ -581,7 +582,7 @@ func Test_RequestForWithdrawal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, _, controller := prepare(t)
+			mockStorageService, _, mockUserService, _, controller := prepare(t)
 			tt.mockSetup(mockStorageService, mockUserService)
 
 			handler := controller.RequestForWithdrawal()
@@ -665,7 +666,7 @@ func Test_InfoAboutWithdrawals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockStorageService, mockUserService, _, controller := prepare(t)
+			mockStorageService, _, mockUserService, _, controller := prepare(t)
 			tt.mockSetup(mockStorageService, mockUserService)
 
 			handler := controller.InfoAboutWithdrawals()

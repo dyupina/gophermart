@@ -20,6 +20,7 @@ import (
 type Controller struct {
 	conf           *config.Config
 	storageService storage.StorageService
+	storageUtils   storage.StorageUtils
 	sugar          *zap.SugaredLogger
 	userService    user.UserService
 	accrualQueue   *AccrualQueue
@@ -34,11 +35,12 @@ var (
 	ErrAccrualRequest    = errors.New("error sending GET request")
 )
 
-func NewController(conf *config.Config, storageService storage.StorageService,
+func NewController(conf *config.Config, storageService storage.StorageService, storageUtils storage.StorageUtils,
 	logger *zap.SugaredLogger, us user.UserService, wp *AccrualQueue, accrualService clients.AccrualClient) *Controller {
 	con := &Controller{
 		conf:           conf,
 		storageService: storageService,
+		storageUtils:   storageUtils,
 		sugar:          logger,
 		userService:    us,
 		accrualQueue:   wp,
@@ -52,7 +54,7 @@ func NewController(conf *config.Config, storageService storage.StorageService,
 
 func (con *Controller) handleAuth(res http.ResponseWriter, userID string, user_ user.User) {
 	storedHashedPassword := con.storageService.GetHashedPasswordByLogin(user_.Login)
-	if storedHashedPassword == "" || !con.storageService.CheckPasswordHash(user_.Password, storedHashedPassword) {
+	if storedHashedPassword == "" || !con.storageUtils.CheckPasswordHash(user_.Password, storedHashedPassword) {
 		con.Debug(res, "Unauthorized: Invalid login/password", http.StatusUnauthorized)
 		return
 	}
@@ -80,9 +82,9 @@ func (con *Controller) Register() http.HandlerFunc {
 			return
 		}
 
-		hashedPassword, err := con.storageService.HashPassword(password)
+		hashedPassword, err := con.storageUtils.HashPassword(password)
 		if err != nil {
-			con.Debug(res, "Internal server error", http.StatusInternalServerError)
+			con.Debug(res, "(Register) Internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -141,7 +143,7 @@ func (con *Controller) OrdersUpload() http.HandlerFunc {
 				con.Debug(res, "Conflict", http.StatusConflict)
 				return
 			}
-			con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+			con.Debug(res, "(OrdersUpload) Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
@@ -162,18 +164,18 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 		userID := req.Header.Get("User-ID")
 		userLogin := con.storageService.GetLoginByUID(userID)
 		if userLogin == "" {
-			con.Debug(res, "Unauthorized", http.StatusUnauthorized)
+			con.Debug(res, "(OrdersGet) Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		orders, err := con.storageService.GetOrders(userLogin)
 		if err != nil {
-			con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+			con.Debug(res, "(OrdersGet) Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
 		if len(orders) == 0 {
-			con.Debug(res, "No Content", http.StatusNoContent)
+			con.Debug(res, "(OrdersGet) No Content", http.StatusNoContent)
 			return
 		}
 
@@ -199,11 +201,11 @@ func (con *Controller) OrdersGet() http.HandlerFunc {
 				case errA := <-con.accrualQueue.errors:
 					switch {
 					case errors.Is(errA, ErrUpdateUserBalance):
-						con.Debug(res, "Error UpdateUserBalance", http.StatusInternalServerError)
+						con.Debug(res, "(OrdersGet) Error UpdateUserBalance", http.StatusInternalServerError)
 					case errors.Is(errA, ErrUpdateOrder):
-						con.Debug(res, "Error UpdateOrder", http.StatusInternalServerError)
+						con.Debug(res, "(OrdersGet) Error UpdateOrder", http.StatusInternalServerError)
 						// default:
-						// 	con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+						// 	con.Debug(res, "(OrdersGet) Internal Server Error", http.StatusInternalServerError)
 					}
 					return
 				}
@@ -227,7 +229,7 @@ func (con *Controller) UserBalance() http.HandlerFunc {
 		}
 		balance, err := con.storageService.GetUserBalance(userLogin)
 		if err != nil {
-			con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+			con.Debug(res, "(UserBalance) Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
@@ -265,7 +267,7 @@ func (con *Controller) RequestForWithdrawal() http.HandlerFunc {
 			if errors.Is(err, storage.ErrInsufficientFunds) {
 				con.Debug(res, "Insufficient funds", http.StatusPaymentRequired)
 			} else {
-				con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+				con.Debug(res, "(RequestForWithdrawal) Internal Server Error", http.StatusInternalServerError)
 			}
 			return
 		}
@@ -285,7 +287,7 @@ func (con *Controller) InfoAboutWithdrawals() http.HandlerFunc {
 
 		withdrawals, err := con.storageService.GetUserWithdrawals(userLogin)
 		if err != nil {
-			con.Debug(res, "Internal Server Error", http.StatusInternalServerError)
+			con.Debug(res, "(InfoAboutWithdrawals) Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 

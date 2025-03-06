@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 )
 
 type Config struct {
@@ -54,10 +53,6 @@ func Init(c *Config) error {
 	}
 	if c.AccrualSystemAddress == "" {
 		return errors.New("set ACCRUAL_SYSTEM_ADDRESS env variable")
-	}
-
-	if !strings.HasPrefix(c.AccrualSystemAddress, "http://") {
-		c.AccrualSystemAddress = "http://" + c.AccrualSystemAddress
 	}
 
 	return nil

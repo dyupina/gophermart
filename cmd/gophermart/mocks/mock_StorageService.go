@@ -49,18 +49,18 @@ func (mr *MockStorageServiceMockRecorder) AddOrder(arg0, arg1 interface{}) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddOrder", reflect.TypeOf((*MockStorageService)(nil).AddOrder), arg0, arg1)
 }
 
-// CheckPasswordHash mocks base method.
-func (m *MockStorageService) CheckPasswordHash(arg0, arg1 string) bool {
+// BalanceForUserLogin mocks base method.
+func (m *MockStorageService) BalanceForUserLogin(arg0 string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CheckPasswordHash", arg0, arg1)
-	ret0, _ := ret[0].(bool)
+	ret := m.ctrl.Call(m, "BalanceForUserLogin", arg0)
+	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// CheckPasswordHash indicates an expected call of CheckPasswordHash.
-func (mr *MockStorageServiceMockRecorder) CheckPasswordHash(arg0, arg1 interface{}) *gomock.Call {
+// BalanceForUserLogin indicates an expected call of BalanceForUserLogin.
+func (mr *MockStorageServiceMockRecorder) BalanceForUserLogin(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckPasswordHash", reflect.TypeOf((*MockStorageService)(nil).CheckPasswordHash), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BalanceForUserLogin", reflect.TypeOf((*MockStorageService)(nil).BalanceForUserLogin), arg0)
 }
 
 // GetHashedPasswordByLogin mocks base method.
@@ -134,21 +134,6 @@ func (m *MockStorageService) GetUserWithdrawals(arg0 string) ([]models.Withdrawa
 func (mr *MockStorageServiceMockRecorder) GetUserWithdrawals(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserWithdrawals", reflect.TypeOf((*MockStorageService)(nil).GetUserWithdrawals), arg0)
-}
-
-// HashPassword mocks base method.
-func (m *MockStorageService) HashPassword(arg0 string) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HashPassword", arg0)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// HashPassword indicates an expected call of HashPassword.
-func (mr *MockStorageServiceMockRecorder) HashPassword(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HashPassword", reflect.TypeOf((*MockStorageService)(nil).HashPassword), arg0)
 }
 
 // SaveLoginPassword mocks base method.
