@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  db:
+    env_file: ".env"
+    image: postgres
+    container_name: my-postgres
+    networks:
+      - my-network
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+    depends_on:
+      - accrual_app # иначе не смогла добавить зависимость
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  accrual_app:
+    env_file: ".env"
+    build:
+      context: .
+      dockerfile: Dockerfile_accrual
+    container_name: my-accrual
+    networks:
+      - my-network
+    ports:
+      - "8085:8085"
+    working_dir: /app
+    # volumes:
+    #   - ./:/app
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+      ACCRUAL_PORT: ${ACCRUAL_PORT}
+    command: sh -c './accrual_linux_amd64 -a "0.0.0.0:${ACCRUAL_PORT}" -d "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:5432/${POSTGRES_DB}?sslmode=disable"'
+
+  gophermart_app:
+    env_file: ".env"
+    build:
+      context: .
+      dockerfile: Dockerfile_gophermart
+    container_name: my-gophermart
+    networks:
+      - my-network
+    ports:
+      - "8081:8081"
+    working_dir: /app
+    volumes: # для копирования исп. файла из контейнера на хост
+      - ./:/app/output
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+      RUN_ADDRESS___: ${RUN_ADDRESS___}
+      ACCRUAL_PORT: ${ACCRUAL_PORT}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c 'cp ./gophermart ./output/ && ./gophermart -a "$RUN_ADDRESS___" -d "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:5432/${POSTGRES_DB}?sslmode=disable" -r "accrual_app:${ACCRUAL_PORT}"'
+
+networks:
+  my-network:
+    driver: bridge

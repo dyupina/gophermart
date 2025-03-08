@@ -1,0 +1,12 @@
+FROM debian:bookworm
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY cmd/accrual/accrual_linux_amd64 /app/
+
+RUN chmod +x /app/accrual_linux_amd64
+
+CMD ["./accrual_linux_amd64"]
